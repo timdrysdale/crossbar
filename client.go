@@ -96,10 +96,7 @@ func (c *Client) writePump() {
 		ticker.Stop()
 		c.conn.Close()
 	}()
-	
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-	
+
 	for {
 		select {
 		case message, ok := <-c.send:
@@ -131,8 +128,6 @@ func (c *Client) writePump() {
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
-		case <-signalChan:
-			       return
 		}
 	}
 }
@@ -152,17 +147,5 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	go client.writePump()
 	go client.readPump()
 	
-	signalChan := make(chan os.Signal, 1)
-	cleanupDone := make(chan struct{})
-	signal.Notify(signalChan, os.Interrupt)
-	go func() {
-		<-signalChan
-		fmt.Println("\nReceived an interrupt, stopping services...\n")
-		//cleanup(services, c)
-		close(cleanupDone)
-	}()
-	<-cleanupDone
-
-
 	
 }
