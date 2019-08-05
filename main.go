@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"github.com/gorilla/mux"
 	"net/http"
 	"os"
 	"os/signal"
@@ -36,8 +37,8 @@ func main() {
 	cleanupDone := make(chan struct{})
 	
 	flag.Parse()
-	hub := newHub()
-	go hub.run()
+	//hub := newHub()
+	go h.run()
 	go timer()
 
 	go func() {
@@ -49,12 +50,12 @@ func main() {
 	}()
 	
         go func(){
-		
-	http.HandleFunc("/", serveHome)
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		serveWs(hub, w, r)
+	r := mux.NewRouter()
+	r.HandleFunc("/", serveHome)
+	r.HandleFunc("/ws/{room}/", func(w http.ResponseWriter, r *http.Request) {
+		serveWs(w, r)  //was hub, w, r
 	})
-
+	http.Handle("/", r)
 
 	err := http.ListenAndServe(*addr, nil)
 	if err != nil {
