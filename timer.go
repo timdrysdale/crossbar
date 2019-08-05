@@ -29,11 +29,6 @@ func timer() {
 	u := url.URL{Scheme: "ws", Host: *addr, Path: "/ws"}
 	log.Printf("connecting to %s", u.String())
 
-	//c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
-	//if err != nil {
-	//	log.Fatal("dial:", err)
-	//}
-
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 
 	for  err != nil {
@@ -41,7 +36,7 @@ func timer() {
 		select {
 			
 		case <-interrupt:
-			log.Println("interrupt")
+			return
 			
 		default:
 			c, _, err = websocket.DefaultDialer.Dial(u.String(), nil)
@@ -72,9 +67,11 @@ func timer() {
 	for {
 		select {
 		case <-done:
+			log.Println("timer done")
 			return
 		case t := <-ticker.C:
 			err := c.WriteMessage(websocket.TextMessage, []byte(t.String()))
+			log.Println("sent message", t.String())
 			if err != nil {
 				log.Println("write:", err)
 				return
@@ -92,6 +89,7 @@ func timer() {
 			select {
 			case <-done:
 			case <-time.After(time.Second):
+			log.Println("timer waited a second")	
 			}
 			return
 		}

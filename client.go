@@ -6,11 +6,9 @@ package main
 
 import (
 	"bytes"
-	"fmt"
+
 	"log"
 	"net/http"
-	"os"
-	"os/signal"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -62,9 +60,7 @@ func (c *Client) readPump() {
 		c.conn.Close()
 	}()
 
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-	
+
 	c.conn.SetReadLimit(maxMessageSize)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
@@ -78,10 +74,7 @@ func (c *Client) readPump() {
 		}
 		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
 		c.hub.broadcast <- message
-		select{
-			case <-signalChan:
-			       return
-		}
+
 	}
 }
 
