@@ -132,6 +132,7 @@ func (c *Client) writePump() {
 				return
 			}
 		case <-signalChan:
+			log.
 			       return
 		}
 	}

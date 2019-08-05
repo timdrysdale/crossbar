@@ -6,8 +6,12 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	
 )
 
 var addr = flag.String("addr", ":8080", "http service address")
@@ -26,15 +30,38 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+	cleanupDone := make(chan struct{})
+	
 	flag.Parse()
 	hub := newHub()
 	go hub.run()
+	go timer()
+
+	go func() {
+		fmt.Println("\nMain waiting on signalChan...\n")
+		<-signalChan
+		fmt.Println("\nMain Received an interrupt, stopping services...\n")
+		//cleanup(services, c)
+		close(cleanupDone)
+	}()
+	
+        go func(){
+		
 	http.HandleFunc("/", serveHome)
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		serveWs(hub, w, r)
 	})
+
+
 	err := http.ListenAndServe(*addr, nil)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
+	}()
+
+	<-cleanupDone
+	
 }

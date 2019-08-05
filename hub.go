@@ -3,6 +3,12 @@
 // license that can be found in the LICENSE file.
 
 package main
+import (
+	"log"
+	"os"
+	"os/signal"
+	"time"
+)
 
 // Hub maintains the set of active clients and broadcasts messages to the
 // clients.
@@ -30,6 +36,11 @@ func newHub() *Hub {
 }
 
 func (h *Hub) run() {
+
+	done := make(chan struct{})
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	
 	for {
 		select {
 		case client := <-h.register:
@@ -48,6 +59,18 @@ func (h *Hub) run() {
 					delete(h.clients, client)
 				}
 			}
+		case <-interrupt:
+			log.Println("HUB interrupt")
+
+			// Cleanly close the connection by sending a close message and then
+			// waiting (with timeout) for the server to close the connection.
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+			}
+			return	
 		}
 	}
 }
+
+
