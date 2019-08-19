@@ -25,7 +25,7 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 			fmt.Println(err)
 			return
 		}
-		defer c.Close(websocket.StatusInternalError, "the sky is falling")
+		defer c.Close(websocket.StatusInternalError, "HandleConnection: the sky is falling")
 
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
@@ -43,39 +43,39 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 			clientActionsChan <- clientAction{action: clientDelete, client: client}
 		}()
 
-		go func() {
+		//typ, reader, err := c.Reader(ctx)
+		//n, err = reader.Read(buf)
+		//fmt.Printf("%v %v", typ, n)
 
-			for {
-				select {
-				default:
+		for {
+			select {
+			default:
 
-					typ, r, err := c.Reader(ctx)
+				typ, reader, err := c.Reader(ctx)
 
-					if err != nil {
-						fmt.Println("HandleConnections: io.Reader", err)
-					}
-
-					if typ != websocket.MessageBinary {
-						fmt.Println("Not binary")
-					}
-
-					n, err = r.Read(buf)
-
-					if err != nil {
-						if err != io.EOF {
-							fmt.Println("Read:", err)
-						}
-					}
-
-					messagesFromMe <- message{sender: client, typ: typ, data: buf[:n]}
-
-				case <-closed:
-					c.Close(websocket.StatusNormalClosure, "")
-					return
+				if err != nil {
+					fmt.Println("HandleConnections: io.Reader", err)
 				}
-			}
 
-		}()
+				if typ != websocket.MessageBinary {
+					fmt.Println("Not binary")
+				}
+
+				n, err = reader.Read(buf)
+
+				if err != nil {
+					if err != io.EOF {
+						fmt.Println("Read:", err)
+					}
+				}
+				fmt.Printf("%v %v %v\n", typ, n, buf[:n])
+				messagesFromMe <- message{sender: client, typ: typ, data: buf[:n]}
+
+			case <-closed:
+				c.Close(websocket.StatusNormalClosure, "")
+				return
+			}
+		}
 
 		go func() {
 			for {
@@ -112,9 +112,9 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 
 	}) //end of fun definition
 
-	addr := strings.Join([]string{host.Hostname(), ":", host.Port()}, "")
+	addr := strings.Join([]string{host.Hostname(), ":", host.Port(), "/"}, "")
 	log.Printf("Starting listener on %s\n", addr)
-	err := http.ListenAndServe(addr, fn)
+	err := http.ListenAndServe("localhost:8097", fn)
 	log.Fatal(err)
 
 }

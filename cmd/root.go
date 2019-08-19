@@ -32,7 +32,7 @@ var cfgFile string
 var listen string
 var bufferSize int64
 var logFile string
-var host url.URL
+var host *url.URL
 
 /* configuration
 
