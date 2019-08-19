@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"sync"
@@ -30,7 +31,8 @@ import (
 var cfgFile string
 var listen string
 var bufferSize int64
-var log string
+var logFile string
+var host url.URL
 
 /* configuration
 
@@ -53,10 +55,10 @@ and can handle binary and text messages.`,
 		var wg sync.WaitGroup
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt)
-		//msg := make(chan []byte)
+		messagesToDistribute := make(chan message, 10) //TODO make buffer length configurable
+		var topics topicDirectory
+		clientActionsChan := make(chan clientAction)
 		closed := make(chan struct{})
-
-		//var topics topicDirectory
 
 		go func() {
 			for _ = range c {
@@ -68,12 +70,30 @@ and can handle binary and text messages.`,
 			}
 		}()
 
-		//wg.Add(3)
+		host, err := url.Parse(listen)
+		if err != nil {
+			panic(err)
+		} else if host.Scheme == "" || host.Host == "" {
+			fmt.Println("error: listen must be an absolute URL")
+			return
+		} else if host.Scheme != "ws" {
+			fmt.Println("error: listen must begin with ws")
+			return
+		} else if host.Scheme != "wss" {
+			fmt.Println("error: listen does not yet support wss; please use a reverse proxy")
+			return
+		}
 
-		//go HandleConnections(closed, msg, &wg, &topics, listen)
-		//go HandleMessages(closed, msg, &wg, r)
-		//go HandleSubscriptions(closed)
-		//wg.Wait()
+		wg.Add(3)
+		//func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message)
+		go HandleConnections(closed, &wg, clientActionsChan, messagesToDistribute)
+
+		//func HandleMessages(closed <-chan struct{}, wg *sync.WaitGroup, topics *topicDirectory, messagesChan <-chan message)
+		go HandleMessages(closed, &wg, &topics, messagesToDistribute)
+
+		//func HandleClients(closed <-chan struct{}, wg *sync.WaitGroup, topics *topicDirectory, clientActionsChan chan clientAction)
+		go HandleClients(closed, &wg, &topics, clientActionsChan)
+		wg.Wait()
 	},
 }
 
@@ -93,7 +113,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.crossbar.yaml)")
 	rootCmd.PersistentFlags().StringVar(&listen, "listen", "http://127.0.0.1:8080", "http://<ip>:<port> to listen on (default is http://127.0.0.1:8080)")
 	rootCmd.PersistentFlags().Int64Var(&bufferSize, "buffer", 32768, "bufferSize in bytes (default is 32,768)")
-	rootCmd.PersistentFlags().StringVar(&log, "log", "", "log file (default is STDOUT)")
+	rootCmd.PersistentFlags().StringVar(&logFile, "log", "", "log file (default is STDOUT)")
 }
 
 // initConfig reads in config file and ENV variables if set.

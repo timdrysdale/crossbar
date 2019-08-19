@@ -107,7 +107,7 @@ func TestHandleMessages(t *testing.T) {
 
 	msg, err = read(client3Chan, 1*time.Millisecond)
 	if err != nil && !bytes.Equal(msg.data, b3) {
-		t.Errorf("Client 3 should have got msg but got %v,%v,%v", msg, err, topics)
+		t.Errorf("Client 3 should have got msg but got %v,%v,%v", msg, err, topics.directory)
 	}
 
 	msg, err = read(client4Chan, 1*time.Millisecond)

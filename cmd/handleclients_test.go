@@ -90,7 +90,7 @@ func TestHandler(t *testing.T) {
 	for i := range clientList {
 		if clientExists(&topics, clientList[i]) != clientShouldExist[i] {
 			t.Errorf("handler/deleteClientFromTopic(): client %v has WRONG existence status, should be %v\n", i, clientShouldExist[i])
-			t.Errorf("%v", topics)
+			t.Errorf("%v", topics.directory)
 		}
 	}
 
