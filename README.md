@@ -1,4 +1,38 @@
-# Chat Example
+# Crossbar
+![alt text][status]
+
+Websocket relay server with topics 
+
+Features:
+
+1. user-configurable buffersize at startup (default 1,024,000 (1MB) with overlarge messages rejected and connection dropped)
+1. bidirectional message flow, that toleratese unidirectional message flow in practice 
+1. binary and text messages can be used in the same connection (TODO)
+1. topics set by incoming URL path 
+
+## Example use case:
+
+Problem: Relay video stream, data stream, and control messages between a remote experiment and a user.
+
+Solution: deploy instances of crossbar, one with a large buffersize and one with a small buffersize. Send video through the relay with the large buffer size, and data/control through the relay with the smaller buffer size. Protect endpoints with middleware such as gatekeeper or request authorisation in the reverse proxy.
+
+## Why?
+
+Websocket relays are available in many guises, but I wanted to write this for the experience.
+
+## Mux
+
+A muxer is needed.
+
+Candidates
+
+Mangos
+
+
+
+## Chat example
+
+So far this code is just the gorilla chat and a mod to make rooms
 
 This application shows how to use the
 [websocket](https://github.com/gorilla/websocket) package to implement a simple
@@ -100,3 +134,6 @@ scroll position is not changed.
 
 The form handler writes the user input to the websocket and clears the input
 field.
+
+
+[status]: https://img.shields.io/badge/alpha-do%20not%20use-orange "Alpha status, do not use"

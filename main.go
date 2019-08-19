@@ -7,12 +7,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"github.com/gorilla/mux"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	
 )
 
 var addr = flag.String("addr", ":8080", "http service address")
@@ -35,7 +34,7 @@ func main() {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
 	cleanupDone := make(chan struct{})
-	
+
 	flag.Parse()
 	//hub := newHub()
 	go h.run()
@@ -48,21 +47,21 @@ func main() {
 		//cleanup(services, c)
 		close(cleanupDone)
 	}()
-	
-        go func(){
-	r := mux.NewRouter()
-	r.HandleFunc("/", serveHome)
-	r.HandleFunc("/ws/{room}/", func(w http.ResponseWriter, r *http.Request) {
-		serveWs(w, r)  //was hub, w, r
-	})
-	http.Handle("/", r)
 
-	err := http.ListenAndServe(*addr, nil)
-	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
-	}
+	go func() {
+		r := mux.NewRouter()
+		r.HandleFunc("/", serveHome)
+		r.HandleFunc("/ws/{room}/", func(w http.ResponseWriter, r *http.Request) {
+			serveWs(w, r) //was hub, w, r
+		})
+		http.Handle("/", r)
+
+		err := http.ListenAndServe(*addr, nil)
+		if err != nil {
+			log.Fatal("ListenAndServe: ", err)
+		}
 	}()
 
 	<-cleanupDone
-	
+
 }
