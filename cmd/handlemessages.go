@@ -30,8 +30,10 @@ func distributeMessage(topics *topicDirectory, message message) {
 		//don't send to sender
 		if destination.name != message.sender.name {
 			//non-blocking write to chan - skips if can't write
+			//go func() { destination.messagesChan <- message }()
 			select {
 			case destination.messagesChan <- message:
+			//case <-time.After(100 * time.Millisecond):
 			default:
 				fmt.Printf("Warn: not sending message to %v (%v)\n", destination, message) //TODO log this "properly"
 			}

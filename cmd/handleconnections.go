@@ -31,7 +31,7 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 		defer cancel()
 
 		//subscribe this new client
-		var messagesForMe chan message
+		messagesForMe := make(chan message, 2)
 		var name = uuid.New().String()
 		var topic = r.URL.Path
 
@@ -54,12 +54,13 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 				typ, reader, err := c.Reader(ctx)
 
 				if err != nil {
-					fmt.Println("HandleConnections: io.Reader", err)
+					//fmt.Println("HandleConnections: io.Reader", err)
+					return
 				}
 
-				if typ != websocket.MessageBinary {
-					fmt.Println("Not binary")
-				}
+				//if typ != websocket.MessageBinary {
+				//	fmt.Println("Not binary")
+				//}
 
 				n, err = reader.Read(buf)
 
@@ -68,7 +69,7 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 						fmt.Println("Read:", err)
 					}
 				}
-				fmt.Printf("%v %v %v\n", typ, n, buf[:n])
+				//fmt.Printf("%v %v %v\n", typ, n, buf[:n])
 				messagesFromMe <- message{sender: client, typ: typ, data: buf[:n]}
 
 			case <-closed:

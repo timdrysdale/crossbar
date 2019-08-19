@@ -49,7 +49,7 @@ func TestHandleConnections(t *testing.T) {
 	}
 	fmt.Printf("port: %v\n", port)
 
-	listen = fmt.Sprintf("ws://127.0.0.1:8099") //%v/", port)
+	listen = fmt.Sprintf("ws://127.0.0.1:8097/") //%v/", port)
 
 	host, err = url.Parse(listen)
 
@@ -64,32 +64,43 @@ func TestHandleConnections(t *testing.T) {
 	go HandleClients(closed, &wg, &topics, clientActionsChan)
 
 	//wait for server to be up?
-	time.Sleep(10 * time.Second)
+	time.Sleep(1 * time.Second)
 
-	//send := fmt.Sprintf("%vin/0987oihlkjfhasdfgkjh", listen)
+	topic1 := "ws://127.0.0.1:8097/in/stream01" //fmt.Sprintf("%vin/stream01", listen)
+	topic2 := "ws://127.0.0.1:8097/in/stream02" //fmt.Sprintf("%vin/stream02", listen)
+	i1 := 1
+	i2 := 2
 
-	//clientSendJSON(t, send)
+	go clientReceiveJSON(t, topic1, i1)
+	go clientReceiveJSON(t, topic2, i2)
 
-	//go clientReceiveJSON(t, send)
+	time.Sleep(1000 * time.Millisecond)
 
-	//time.Sleep(1 * time.Second)
+	go clientSendJSON(t, topic1, i1)
+	go clientSendJSON(t, topic2, i1) //cause an error
+	time.Sleep(2 * time.Second)
 }
 
-func clientSendJSON(t *testing.T, url string) {
+// This example dials a server, writes a single JSON message and then
+
+func clientSendJSON(t *testing.T, url string, i int) {
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	fmt.Printf("ClientSendJSON ctx %v", ctx)
-	c, _, err := websocket.Dial(ctx, url, websocket.DialOptions{})
+
+	c, _, err := websocket.Dial(ctx, url, websocket.DialOptions{}) //"ws://127.0.0.1:8097"
+
 	if err != nil {
-		t.Errorf("%v", err)
+		t.Errorf("clientSendJson dial error: %v\n", err)
 	}
+
 	defer c.Close(websocket.StatusInternalError, "clientSendJSON:the sky is falling")
 
 	err = wsjson.Write(ctx, c, map[string]int{
-		"i": 123,
+		"i": i,
 	})
 	if err != nil {
-		t.Errorf("%v", err)
+		t.Errorf("clientSendJSON Write Error%v\n", err)
 	}
 	time.Sleep(time.Second)
 
@@ -97,7 +108,7 @@ func clientSendJSON(t *testing.T, url string) {
 
 }
 
-func clientReceiveJSON(t *testing.T, url string) {
+func clientReceiveJSON(t *testing.T, url string, i int) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
@@ -107,12 +118,20 @@ func clientReceiveJSON(t *testing.T, url string) {
 	}
 	defer c.Close(websocket.StatusInternalError, "ClientReceiveJSON: the sky is falling")
 	v := map[string]int{}
+
 	err = wsjson.Read(ctx, c, &v)
 	if err != nil {
 		t.Errorf("%v", err)
 	}
 
+	if v["i"] != i {
+		t.Errorf("Expected {i:%v}, got %v", i, v["i"])
+	} else {
+		fmt.Printf("%v got %v", url, i)
+	}
+
 	fmt.Printf("received: %v\n", v)
+
 	time.Sleep(time.Second)
 	c.Close(websocket.StatusNormalClosure, "")
 
