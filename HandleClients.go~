@@ -1,0 +1,10 @@
+package main
+
+import "sync"
+
+func HandleClients(closed <-chan struct{}, wg *sync.WaitGroup, chanClientActions chan<- clientActions) {
+	defer wg.Done()
+
+	var clients = make(map[string]chan message)
+
+}

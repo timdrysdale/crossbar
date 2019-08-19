@@ -1,0 +1,55 @@
+package cmd
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/google/uuid"
+)
+
+func TestAddClientToTopic(t *testing.T) {
+
+	var topics topicDirectory
+
+	client1 := randomClient()
+	client2 := randomClient()
+	client3 := randomClientForTopic(client2.topic)
+	client4 := randomClientForTopic(client2.topic)
+
+	addClientToTopic(&topics, client1)
+	addClientToTopic(&topics, client2)
+	addClientToTopic(&topics, client3)
+	addClientToTopic(&topics, client4)
+
+	if !clientExists(&topics, client1) {
+		fmt.Println("client1 does not exist")
+	} else {
+		fmt.Println("client1 found")
+	}
+
+}
+
+func randomClient() clientDetails {
+	return clientDetails{uuid.New().String(), uuid.New().String(), make(chan message)}
+}
+
+func randomClientForTopic(topic string) clientDetails {
+	return clientDetails{uuid.New().String(), topic, make(chan message)}
+}
+
+func clientExists(topics *topicDirectory, client clientDetails) bool {
+
+	topics.Lock()
+	existingClients := topics.directory[client.topic]
+	topics.Unlock()
+
+	for _, existingClient := range existingClients {
+		if client.name == existingClient.name {
+			return true
+
+		}
+	}
+
+	return false
+
+}

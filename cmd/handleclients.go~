@@ -1,0 +1,58 @@
+package cmd
+
+import "sync"
+
+func HandleClients(closed <-chan struct{}, wg *sync.WaitGroup, topics *topicDirectory, clientActionsChan chan<- clientActions) {
+	defer wg.Done()
+
+	for {
+		select {
+		case <-closed:
+			return
+		case request := <-clientActionsChan:
+			if request.action == clientAdd {
+
+				addClientToTopic(&topics, request.client)
+
+			} else if request.action == ClientDelete {
+				deleteClientFromTopic(&topics, request.client)
+
+			}
+		}
+	}
+}
+
+func addClientToTopic(topics *topicDirectory, client clientDetails) {
+
+	_, exists := topics.directory[client.topic]
+
+	if !exists {
+		topics.lock()
+		topics.directory[client.topic] = make([]clientDetails{client.topic})
+		topics.unlock()
+	} else {
+		topics.lock()
+		topics.directory[client.topic].append(client)
+		topics.unlock()
+	}
+
+}
+
+func deleteClientFromTopic(topics *topicDirectory, client clientDetails) {
+
+	_, exists := topics.directory[client.topic]
+
+	if !exists {
+		topics.lock()
+		existingClients := topics.directory[client.topic]
+		filteredClients := existingClients[:0]
+		for _, existingClient := range existingClients {
+			if client.name != existingClient.name {
+				filteredClients = append(filteredClients, existingClient)
+			}
+		}
+		topics.directory[client.topic] = filteredClients
+		topics.unlock()
+	}
+
+}
