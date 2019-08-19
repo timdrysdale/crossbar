@@ -46,13 +46,7 @@ func deleteClientFromTopic(topics *topicDirectory, client clientDetails) {
 	if exists {
 		topics.Lock()
 		existingClients := topics.directory[client.topic]
-		filteredClients := existingClients[:0]
-		for _, existingClient := range existingClients {
-			if client.name != existingClient.name {
-				filteredClients = append(filteredClients, existingClient)
-			}
-		}
-		topics.directory[client.topic] = filteredClients
+		topics.directory[client.topic] = filterClients(existingClients, client)
 		topics.Unlock()
 	}
 

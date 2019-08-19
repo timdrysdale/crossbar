@@ -6,10 +6,11 @@ import (
 	"nhooyr.io/websocket"
 )
 
-//messages will be wrapped in this struct for muxing
+// messages will be wrapped in this struct for muxing
 type message struct {
-	typ  websocket.MessageType
-	data []byte //text data are converted to/from bytes as needed
+	sender clientDetails
+	typ    websocket.MessageType
+	data   []byte //text data are converted to/from bytes as needed
 }
 
 type clientDetails struct {

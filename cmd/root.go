@@ -32,6 +32,14 @@ var listen string
 var bufferSize int64
 var log string
 
+/* configuration
+
+bufferSize
+muxBufferLength (for main message queue into the mux)
+clientBufferLength (for each client's outgoing channel)
+
+*/
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "crossbar",
