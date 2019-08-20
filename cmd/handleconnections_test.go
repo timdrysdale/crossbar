@@ -49,7 +49,7 @@ func TestHandleConnections(t *testing.T) {
 	}
 	fmt.Printf("port: %v\n", port)
 
-	listen = fmt.Sprintf("ws://127.0.0.1:8097/") //%v/", port)
+	listen = fmt.Sprintf("ws://127.0.0.1:%v", port)
 
 	host, err = url.Parse(listen)
 

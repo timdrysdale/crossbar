@@ -17,9 +17,11 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"sync"
 
 	"github.com/spf13/cobra"
@@ -28,11 +30,12 @@ import (
 	"github.com/spf13/viper"
 )
 
-var cfgFile string
-var listen string
 var bufferSize int64
-var logFile string
+var cfgFile string
+var cpuprofile string
 var host *url.URL
+var listen string
+var logFile string
 
 /* configuration
 
@@ -51,6 +54,15 @@ and can handle binary and text messages.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
+
+		if cpuprofile != "" {
+			f, err := os.Create(cpuprofile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			pprof.StartCPUProfile(f)
+			defer pprof.StopCPUProfile()
+		}
 
 		var wg sync.WaitGroup
 		c := make(chan os.Signal, 1)
@@ -112,6 +124,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&listen, "listen", "http://127.0.0.1:8080", "http://<ip>:<port> to listen on (default is http://127.0.0.1:8080)")
 	rootCmd.PersistentFlags().Int64Var(&bufferSize, "buffer", 32768, "bufferSize in bytes (default is 32,768)")
 	rootCmd.PersistentFlags().StringVar(&logFile, "log", "", "log file (default is STDOUT)")
+	rootCmd.PersistentFlags().StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile to file")
+
 }
 
 // initConfig reads in config file and ENV variables if set.

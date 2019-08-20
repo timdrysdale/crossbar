@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -115,9 +116,10 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 
 	}) //end of fun definition
 
-	//addr := strings.Join([]string{host.Hostname(), ":", host.Port(), "/"}, "")
-	//log.Printf("Starting listener on %s\n", addr)
-	err := http.ListenAndServe("localhost:8097", fn)
+	addr := strings.Join([]string{host.Hostname(), ":", host.Port()}, "")
+	log.Printf("Starting listener on %s\n", addr)
+	err := http.ListenAndServe(addr, fn)
+	//err := http.ListenAndServe("localhost:8097", fn)
 	log.Fatal(err)
 
 }
