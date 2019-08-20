@@ -42,6 +42,7 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 
 		defer func() {
 			clientActionsChan <- clientAction{action: clientDelete, client: client}
+			fmt.Printf("Disconnected %v, deleting from topics\n", client)
 		}()
 
 		//typ, reader, err := c.Reader(ctx)

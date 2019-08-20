@@ -1,2 +1,2 @@
 #!/bin/bash
-./crossbar --listen ws://localhost:8099 --buffer 65535
+./crossbar --listen ws://localhost:8097 --buffer 65535
