@@ -55,7 +55,7 @@ func TestHandleConnections(t *testing.T) {
 
 	wg.Add(3)
 	//func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message)
-	go HandleConnections(closed, &wg, clientActionsChan, messagesToDistribute)
+	go HandleConnections(closed, &wg, clientActionsChan, messagesToDistribute, host)
 
 	//func HandleMessages(closed <-chan struct{}, wg *sync.WaitGroup, topics *topicDirectory, messagesChan <-chan message)
 	go HandleMessages(closed, &wg, &topics, messagesToDistribute)
@@ -66,8 +66,8 @@ func TestHandleConnections(t *testing.T) {
 	//wait for server to be up?
 	time.Sleep(10 * time.Millisecond)
 
-	topic1 := "ws://127.0.0.1:8097/topic1" //fmt.Sprintf("%vin/stream01", listen)
-	topic2 := "ws://127.0.0.1:8097/topic2" //fmt.Sprintf("%vin/stream02", listen)
+	topic1 := fmt.Sprintf("%v/in/stream01", listen) //"ws://127.0.0.1:8097/topic1" //
+	topic2 := fmt.Sprintf("%v/in/stream02", listen) //"ws://127.0.0.1:8097/topic2" //
 	i1 := 1
 	i2 := 2
 
@@ -114,12 +114,14 @@ func clientSendJSON(t *testing.T, url string, i int) {
 }
 
 func clientReceiveJSON(t *testing.T, url string, i int) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	c, _, err := websocket.Dial(ctx, url, websocket.DialOptions{})
 	if err != nil {
 		t.Errorf("%v", err)
+		fmt.Println(err)
+		return
 	}
 	defer c.Close(websocket.StatusInternalError, "ClientReceiveJSON: the sky is falling")
 	v := map[string]int{}
@@ -127,6 +129,8 @@ func clientReceiveJSON(t *testing.T, url string, i int) {
 	err = wsjson.Read(ctx, c, &v)
 	if err != nil {
 		t.Errorf("%v", err)
+		fmt.Println(err)
+		return
 	}
 
 	if v["i"] != i {
