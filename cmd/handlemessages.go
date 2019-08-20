@@ -13,9 +13,9 @@ func HandleMessages(closed <-chan struct{}, wg *sync.WaitGroup, topics *topicDir
 		case <-closed:
 			return
 		case msg := <-messagesChan:
-			fmt.Printf("message before distro %v\n", msg)
-			distributeMessage(topics, msg)
-			fmt.Printf("message after distro %v\n", msg)
+			//fmt.Printf("message before distro %v\n", msg)
+			go distributeMessage(topics, msg)
+			//fmt.Printf("message after distro %v\n", msg)
 		}
 	}
 }

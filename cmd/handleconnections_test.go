@@ -26,7 +26,7 @@ func TestHandleConnections(t *testing.T) {
 	signal.Notify(c, syscall.SIGINT)
 	signal.Notify(c, syscall.SIGTERM)
 
-	messagesToDistribute := make(chan message, 10) //TODO make buffer length configurable
+	messagesToDistribute := make(chan message) //TODO make buffer length configurable
 	var topics topicDirectory
 	topics.directory = make(map[string][]clientDetails)
 	clientActionsChan := make(chan clientAction)

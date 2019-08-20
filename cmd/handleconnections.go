@@ -46,49 +46,28 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 		//typ, reader, err := c.Reader(ctx)
 		//n, err = reader.Read(buf)
 		//fmt.Printf("%v %v", typ, n)
+		readerReturnsChan := make(chan readerReturns)
+		readerFinishedChan := make(chan int)
+		readerFinishedChan <- 0 //start the cycle off with a wait for a read
+
 		go func() {
-			fmt.Printf("In %v writer\n", name)
 			for {
 				select {
-				case msg := <-messagesForMe:
-					w, err := c.Writer(ctx, msg.typ)
+				case <-readerFinishedChan:
+					typ, reader, err := c.Reader(ctx)
+					readerReturnsChan <- readerReturns{typ, reader, err}
+				default:
 
-					if err != nil {
-						fmt.Println("HandleConnections: io.Writer", err)
-					}
-
-					n, err = w.Write(msg.data)
-
-					if n != len(msg.data) {
-						fmt.Println("HandleConnections: Mismatch write lengths, overflow?")
-
-					}
-
-					if err != nil {
-						if err != io.EOF {
-							fmt.Println("Write:", err)
-						}
-					} else {
-						fmt.Printf("ws send to %v %v\n", name, buf[:n])
-					}
-
-					err = w.Close() // do every write to flush frame
-					if err != nil {
-						fmt.Println("Closing Write failed:", err)
-					}
-				case <-closed:
-					return
 				}
 			}
 		}()
 
 		for {
 			select {
-			default:
 
-				typ, reader, err := c.Reader(ctx)
+			case readerDetails := <-readerReturnsChan:
 
-				if err != nil {
+				if readerDetails.err != nil {
 					//fmt.Println("HandleConnections: io.Reader", err)
 					return
 				}
@@ -97,7 +76,7 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 				//	fmt.Println("Not binary")
 				//}
 
-				n, err = reader.Read(buf)
+				n, err = readerDetails.reader.Read(buf)
 
 				if err != nil {
 					if err != io.EOF {
@@ -105,8 +84,35 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 					}
 				}
 				//fmt.Printf("%v %v %v\n", typ, n, buf[:n])
-				messagesFromMe <- message{sender: client, typ: typ, data: buf[:n]}
+				messagesFromMe <- message{sender: client, typ: readerDetails.typ, data: buf[:n]}
+				readerFinishedChan <- 0
 
+			case msg := <-messagesForMe:
+				w, err := c.Writer(ctx, msg.typ)
+
+				if err != nil {
+					fmt.Println("HandleConnections: io.Writer", err)
+				}
+
+				n, err = w.Write(msg.data)
+
+				if n != len(msg.data) {
+					fmt.Println("HandleConnections: Mismatch write lengths, overflow?")
+
+				}
+
+				if err != nil {
+					if err != io.EOF {
+						fmt.Println("Write:", err)
+					}
+				} else {
+					fmt.Printf("ws send to %v %v\n", name, buf[:n])
+				}
+
+				err = w.Close() // do every write to flush frame
+				if err != nil {
+					fmt.Println("Closing Write failed:", err)
+				}
 			case <-closed:
 				c.Close(websocket.StatusNormalClosure, "")
 				return

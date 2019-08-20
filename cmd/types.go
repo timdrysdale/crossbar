@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"io"
 	"sync"
 
 	"nhooyr.io/websocket"
@@ -38,3 +39,11 @@ type topicDirectory struct {
 	sync.Mutex
 	directory map[string][]clientDetails
 }
+
+type readerReturns struct {
+	typ    websocket.MessageType
+	reader io.Reader
+	err    error
+}
+
+//MessageType, io.Reader, error
