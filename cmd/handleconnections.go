@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -13,7 +14,7 @@ import (
 	"nhooyr.io/websocket"
 )
 
-func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message) {
+func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message, host *url.URL) {
 	defer wg.Done()
 
 	var buf = make([]byte, bufferSize)
@@ -115,8 +116,9 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 		}
 
 	}) //end of fun definition
-
+	fmt.Printf("host %v\n", host)
 	addr := strings.Join([]string{host.Hostname(), ":", host.Port()}, "")
+	fmt.Printf("addr %v\n", addr)
 	log.Printf("Starting listener on %s\n", addr)
 	err := http.ListenAndServe(addr, fn)
 	//err := http.ListenAndServe("localhost:8097", fn)

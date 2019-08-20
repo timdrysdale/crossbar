@@ -93,10 +93,11 @@ and can handle binary and text messages.`,
 			fmt.Println("error: listen must begin with ws")
 			return
 		}
+		fmt.Printf("listen %v, host %v\n", listen, host)
 
 		wg.Add(3)
 		//func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message)
-		go HandleConnections(closed, &wg, clientActionsChan, messagesToDistribute)
+		go HandleConnections(closed, &wg, clientActionsChan, messagesToDistribute, host)
 
 		//func HandleMessages(closed <-chan struct{}, wg *sync.WaitGroup, topics *topicDirectory, messagesChan <-chan message)
 		go HandleMessages(closed, &wg, &topics, messagesToDistribute)
