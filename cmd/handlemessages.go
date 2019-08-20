@@ -13,9 +13,7 @@ func HandleMessages(closed <-chan struct{}, wg *sync.WaitGroup, topics *topicDir
 		case <-closed:
 			return
 		case msg := <-messagesChan:
-			//fmt.Printf("message before distro %v\n", msg)
 			go distributeMessage(topics, msg)
-			//fmt.Printf("message after distro %v\n", msg)
 		}
 	}
 }
@@ -35,7 +33,7 @@ func distributeMessage(topics *topicDirectory, msg message) {
 			//go func() { destination.messagesChan <- message }()
 			select {
 			case destination.messagesChan <- msg:
-				fmt.Printf("To %v was sent %v\n", destination.name, msg)
+				fmt.Printf("sent %v to %v", destination, msg)
 			default:
 				fmt.Printf("Warn: not sending message to %v (%v)\n", destination, msg) //TODO log this "properly"
 			}

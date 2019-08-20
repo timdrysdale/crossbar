@@ -48,33 +48,32 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 		//fmt.Printf("%v %v", typ, n)
 		readerReturnsChan := make(chan readerReturns)
 		readerFinishedChan := make(chan int)
-		readerFinishedChan <- 0 //start the cycle off with a wait for a read
 
 		go func() {
 			for {
 				select {
 				case <-readerFinishedChan:
+					fmt.Println("getting a reader")
 					typ, reader, err := c.Reader(ctx)
 					readerReturnsChan <- readerReturns{typ, reader, err}
+				case <-closed:
+					return
 				default:
 
 				}
 			}
 		}()
 
+		readerFinishedChan <- 0 //start the cycle off with a wait for a read
+
 		for {
 			select {
 
 			case readerDetails := <-readerReturnsChan:
-
+				fmt.Println("Got a reader")
 				if readerDetails.err != nil {
-					//fmt.Println("HandleConnections: io.Reader", err)
 					return
 				}
-
-				//if typ != websocket.MessageBinary {
-				//	fmt.Println("Not binary")
-				//}
 
 				n, err = readerDetails.reader.Read(buf)
 
@@ -83,11 +82,11 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 						fmt.Println("Read:", err)
 					}
 				}
-				//fmt.Printf("%v %v %v\n", typ, n, buf[:n])
 				messagesFromMe <- message{sender: client, typ: readerDetails.typ, data: buf[:n]}
 				readerFinishedChan <- 0
 
 			case msg := <-messagesForMe:
+				fmt.Println("Got a writer")
 				w, err := c.Writer(ctx, msg.typ)
 
 				if err != nil {
