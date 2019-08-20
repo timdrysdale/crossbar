@@ -30,10 +30,10 @@ func TestHandleMessages(t *testing.T) {
 	client3Chan := make(chan message, 2)
 	client4Chan := make(chan message, 2)
 
-	client1 := clientDetails{"client1", "topic1", client1Chan}
-	client2 := clientDetails{"client2", "topic2", client2Chan}
-	client3 := clientDetails{"client3", "topic2", client3Chan}
-	client4 := clientDetails{"client4", "topic2", client4Chan}
+	client1 := clientDetails{"client1", "/topic1", client1Chan}
+	client2 := clientDetails{"client2", "/topic2", client2Chan}
+	client3 := clientDetails{"client3", "/topic2", client3Chan}
+	client4 := clientDetails{"client4", "/topic2", client4Chan}
 
 	clientActionsChan <- clientAction{clientAdd, client1}
 	clientActionsChan <- clientAction{clientAdd, client2}

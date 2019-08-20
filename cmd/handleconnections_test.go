@@ -66,18 +66,23 @@ func TestHandleConnections(t *testing.T) {
 	//wait for server to be up?
 	time.Sleep(1 * time.Second)
 
-	topic1 := "ws://127.0.0.1:8097/in/stream01" //fmt.Sprintf("%vin/stream01", listen)
-	topic2 := "ws://127.0.0.1:8097/in/stream02" //fmt.Sprintf("%vin/stream02", listen)
+	topic1 := "ws://127.0.0.1:8097/topic1" //fmt.Sprintf("%vin/stream01", listen)
+	topic2 := "ws://127.0.0.1:8097/topic2" //fmt.Sprintf("%vin/stream02", listen)
 	i1 := 1
 	i2 := 2
 
 	go clientReceiveJSON(t, topic1, i1)
+	go clientReceiveJSON(t, topic1, i1)
+	go clientReceiveJSON(t, topic1, i1)
+	go clientReceiveJSON(t, topic2, i2)
+	go clientReceiveJSON(t, topic2, i2)
 	go clientReceiveJSON(t, topic2, i2)
 
 	time.Sleep(1000 * time.Millisecond)
 
-	go clientSendJSON(t, topic1, i1)
-	go clientSendJSON(t, topic2, i1) //cause an error
+	go clientSendJSON(t, topic1, 5)
+	//time.Sleep(1 * time.Millisecond)
+	go clientSendJSON(t, topic2, 27) //cause an error
 	time.Sleep(2 * time.Second)
 }
 
@@ -99,6 +104,7 @@ func clientSendJSON(t *testing.T, url string, i int) {
 	err = wsjson.Write(ctx, c, map[string]int{
 		"i": i,
 	})
+	fmt.Printf("\n--------------------\nWROTE THE NUMBER %v\n-------------------\n", i)
 	if err != nil {
 		t.Errorf("clientSendJSON Write Error%v\n", err)
 	}
@@ -125,9 +131,9 @@ func clientReceiveJSON(t *testing.T, url string, i int) {
 	}
 
 	if v["i"] != i {
-		t.Errorf("Expected {i:%v}, got %v", i, v["i"])
+		t.Errorf("Expected {i:%v}, got %v\n", i, v["i"])
 	} else {
-		fmt.Printf("%v got %v", url, i)
+		fmt.Printf("%v got %v\n", url, i)
 	}
 
 	fmt.Printf("received: %v\n", v)

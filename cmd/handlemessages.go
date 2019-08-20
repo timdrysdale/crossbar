@@ -12,30 +12,32 @@ func HandleMessages(closed <-chan struct{}, wg *sync.WaitGroup, topics *topicDir
 		select {
 		case <-closed:
 			return
-		case message := <-messagesChan:
-			distributeMessage(topics, message)
+		case msg := <-messagesChan:
+			fmt.Printf("message before distro %v\n", msg)
+			distributeMessage(topics, msg)
+			fmt.Printf("message after distro %v\n", msg)
 		}
 	}
 }
 
-func distributeMessage(topics *topicDirectory, message message) {
+func distributeMessage(topics *topicDirectory, msg message) {
 
 	// unsubscribing client would close channel so lock throughout
 	topics.Lock()
 
-	distributionList := topics.directory[message.sender.topic]
+	distributionList := topics.directory[msg.sender.topic]
 
 	// assuming buffered messageChans, all writes should succeed immediately
 	for _, destination := range distributionList {
 		//don't send to sender
-		if destination.name != message.sender.name {
+		if destination.name != msg.sender.name {
 			//non-blocking write to chan - skips if can't write
 			//go func() { destination.messagesChan <- message }()
 			select {
-			case destination.messagesChan <- message:
-			//case <-time.After(100 * time.Millisecond):
+			case destination.messagesChan <- msg:
+				fmt.Printf("To %v was sent %v\n", destination.name, msg)
 			default:
-				fmt.Printf("Warn: not sending message to %v (%v)\n", destination, message) //TODO log this "properly"
+				fmt.Printf("Warn: not sending message to %v (%v)\n", destination, msg) //TODO log this "properly"
 			}
 		}
 	}
