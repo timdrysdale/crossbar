@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -53,7 +52,6 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 			for {
 				select {
 				case <-readerFinishedChan:
-					fmt.Println("getting a reader")
 					typ, reader, err := c.Reader(ctx)
 					readerReturnsChan <- readerReturns{typ, reader, err}
 				case <-closed:
@@ -70,7 +68,7 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 			select {
 
 			case readerDetails := <-readerReturnsChan:
-				fmt.Println("Got a reader")
+
 				if readerDetails.err != nil {
 					return
 				}
@@ -86,7 +84,6 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 				readerFinishedChan <- 0
 
 			case msg := <-messagesForMe:
-				fmt.Println("Got a writer")
 				w, err := c.Writer(ctx, msg.typ)
 
 				if err != nil {
@@ -104,8 +101,6 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 					if err != io.EOF {
 						fmt.Println("Write:", err)
 					}
-				} else {
-					fmt.Printf("ws send to %v %v\n", name, buf[:n])
 				}
 
 				err = w.Close() // do every write to flush frame
@@ -120,8 +115,8 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 
 	}) //end of fun definition
 
-	addr := strings.Join([]string{host.Hostname(), ":", host.Port(), "/"}, "")
-	log.Printf("Starting listener on %s\n", addr)
+	//addr := strings.Join([]string{host.Hostname(), ":", host.Port(), "/"}, "")
+	//log.Printf("Starting listener on %s\n", addr)
 	err := http.ListenAndServe("localhost:8097", fn)
 	log.Fatal(err)
 

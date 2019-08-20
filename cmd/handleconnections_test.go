@@ -64,7 +64,7 @@ func TestHandleConnections(t *testing.T) {
 	go HandleClients(closed, &wg, &topics, clientActionsChan)
 
 	//wait for server to be up?
-	time.Sleep(1 * time.Second)
+	time.Sleep(10 * time.Millisecond)
 
 	topic1 := "ws://127.0.0.1:8097/topic1" //fmt.Sprintf("%vin/stream01", listen)
 	topic2 := "ws://127.0.0.1:8097/topic2" //fmt.Sprintf("%vin/stream02", listen)
@@ -78,11 +78,11 @@ func TestHandleConnections(t *testing.T) {
 	go clientReceiveJSON(t, topic2, i2)
 	go clientReceiveJSON(t, topic2, i2)
 
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 
 	clientSendJSON(t, topic1, i1)
 	clientSendJSON(t, topic2, i2) //cause an error
-	time.Sleep(2 * time.Second)
+	time.Sleep(10 * time.Millisecond)
 }
 
 // This example dials a server, writes a single JSON message and then

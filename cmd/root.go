@@ -57,6 +57,7 @@ and can handle binary and text messages.`,
 		signal.Notify(c, os.Interrupt)
 		messagesToDistribute := make(chan message, 10) //TODO make buffer length configurable
 		var topics topicDirectory
+		topics.directory = make(map[string][]clientDetails)
 		clientActionsChan := make(chan clientAction)
 		closed := make(chan struct{})
 
@@ -78,9 +79,6 @@ and can handle binary and text messages.`,
 			return
 		} else if host.Scheme != "ws" {
 			fmt.Println("error: listen must begin with ws")
-			return
-		} else if host.Scheme != "wss" {
-			fmt.Println("error: listen does not yet support wss; please use a reverse proxy")
 			return
 		}
 

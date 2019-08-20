@@ -33,7 +33,7 @@ func distributeMessage(topics *topicDirectory, msg message) {
 			//go func() { destination.messagesChan <- message }()
 			select {
 			case destination.messagesChan <- msg:
-				fmt.Printf("sent %v to %v", destination, msg)
+				//fmt.Printf("sent %v to %v", destination, msg)
 			default:
 				fmt.Printf("Warn: not sending message to %v (%v)\n", destination, msg) //TODO log this "properly"
 			}
