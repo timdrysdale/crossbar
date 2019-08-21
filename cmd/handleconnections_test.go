@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsutil"
 	"github.com/phayes/freeport"
-	"nhooyr.io/websocket"
-	"nhooyr.io/websocket/wsjson"
 )
 
 // func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message)
@@ -66,10 +66,10 @@ func TestHandleConnections(t *testing.T) {
 	//wait for server to be up?
 	time.Sleep(10 * time.Millisecond)
 
-	topic1 := fmt.Sprintf("%v/in/stream01", listen) //"ws://127.0.0.1:8097/topic1" //
-	topic2 := fmt.Sprintf("%v/in/stream02", listen) //"ws://127.0.0.1:8097/topic2" //
-	i1 := 1
-	i2 := 2
+	topic1 := fmt.Sprintf("%v/in/stream01", listen)
+	topic2 := fmt.Sprintf("%v/in/stream02", listen)
+	i1 := "1"
+	i2 := "2"
 
 	go clientReceiveJSON(t, topic1, i1)
 	go clientReceiveJSON(t, topic1, i1)
@@ -78,70 +78,92 @@ func TestHandleConnections(t *testing.T) {
 	go clientReceiveJSON(t, topic2, i2)
 	go clientReceiveJSON(t, topic2, i2)
 
-	time.Sleep(10 * time.Millisecond)
+	//time.Sleep(10 * time.Millisecond)
 
-	clientSendJSON(t, topic1, i1)
-	clientSendJSON(t, topic2, i2) //cause an error
-	time.Sleep(10 * time.Millisecond)
+	go clientSendJSON(t, topic1, i1)
+	go clientSendJSON(t, topic2, i2)
+	go clientSendJSON(t, topic1, i1)
+	go clientSendJSON(t, topic2, i2)
+	time.Sleep(1000 * time.Millisecond)
 }
 
 // This example dials a server, writes a single JSON message and then
 
-func clientSendJSON(t *testing.T, url string, i int) {
+func clientSendJSON(t *testing.T, url string, msgText string) {
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	c, _, err := websocket.Dial(ctx, url, websocket.DialOptions{}) //"ws://127.0.0.1:8097"
+	conn, _, _, err := ws.DefaultDialer.Dial(context.Background(), url)
 
 	if err != nil {
-		t.Errorf("clientSendJson dial error: %v\n", err)
+		fmt.Printf("%s can not connect: %v\n", msgText, err)
+	} else {
+		fmt.Printf("%s connected\n", msgText)
+		msg := []byte(msgText)
+		err = wsutil.WriteClientMessage(conn, ws.OpText, msg)
+		if err != nil {
+			fmt.Printf("%s can not send: %v\n", msgText, err)
+			return
+		} else {
+			fmt.Printf("%s send: %s, type: %v\n", msgText, msg, ws.OpText)
+		}
+
+		//msg, op, err := wsutil.ReadServerData(conn)
+		//if err != nil {
+		//	fmt.Printf("%s can not receive: %v\n", i, err)
+		//	return
+		//} else {
+		//	fmt.Printf("%s receive: %s，type: %v\n", i, msg, op)
+		//}
+
+		time.Sleep(time.Duration(2) * time.Second)
+
+		err = conn.Close()
+		if err != nil {
+			fmt.Printf("%s can not close: %v\n", msgText, err)
+		} else {
+			fmt.Printf("%s closed\n", msgText)
+		}
 	}
-
-	defer c.Close(websocket.StatusInternalError, "clientSendJSON:the sky is falling")
-
-	err = wsjson.Write(ctx, c, map[string]int{
-		"i": i,
-	})
-
-	if err != nil {
-		t.Errorf("clientSendJSON Write Error%v\n", err)
-	}
-	time.Sleep(time.Second)
-
-	c.Close(websocket.StatusNormalClosure, "")
 
 }
 
-func clientReceiveJSON(t *testing.T, url string, i int) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+func clientReceiveJSON(t *testing.T, url string, msgText string) {
+	conn, _, _, err := ws.DefaultDialer.Dial(context.Background(), url)
 
-	c, _, err := websocket.Dial(ctx, url, websocket.DialOptions{})
 	if err != nil {
-		t.Errorf("%v", err)
-		fmt.Println(err)
-		return
-	}
-	defer c.Close(websocket.StatusInternalError, "ClientReceiveJSON: the sky is falling")
-	v := map[string]int{}
-
-	err = wsjson.Read(ctx, c, &v)
-	if err != nil {
-		t.Errorf("%v", err)
-		fmt.Println(err)
-		return
-	}
-
-	if v["i"] != i {
-		t.Errorf("Expected {i:%v}, got %v\n", i, v["i"])
+		fmt.Printf("%s can not connect: %v\n", msgText, err)
 	} else {
-		fmt.Printf("%v got %v\n", url, i)
+		fmt.Printf("%s connected\n", msgText)
+
+		//msg := []byte(msgText)
+		//err = wsutil.WriteClientMessage(conn, ws.OpText, msg)
+		//if err != nil {
+		//	fmt.Printf("%s can not send: %v\n", msgText, err)
+		//	return
+		//} else {
+		//	fmt.Printf("%s send: %s, type: %v\n", msgText, msg, ws.OpText)
+		//}
+		for i := 0; i <= 2; i++ {
+			msg, op, err := wsutil.ReadServerData(conn)
+			if err != nil {
+				fmt.Printf("%s can not receive: %v\n", msgText, err)
+				return
+			} else {
+				if string(msg) == msgText {
+					fmt.Printf("OK:")
+				} else {
+					fmt.Printf("WRONG:")
+				}
+				fmt.Printf("%s receive: %s，type: %v\n", msgText, msg, op)
+			}
+		}
+		time.Sleep(time.Duration(1) * time.Second)
+
+		err = conn.Close()
+		if err != nil {
+			fmt.Printf("%s can not close: %v\n", msgText, err)
+		} else {
+			fmt.Printf("%s closed\n", msgText)
+		}
 	}
-
-	fmt.Printf("received: %v\n", v)
-
-	time.Sleep(time.Second)
-	c.Close(websocket.StatusNormalClosure, "")
 
 }

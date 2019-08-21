@@ -1,35 +1,27 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 
+	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsutil"
 	"github.com/google/uuid"
-	"nhooyr.io/websocket"
 )
 
 func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message, host *url.URL) {
 	defer wg.Done()
 
-	var buf = make([]byte, bufferSize)
-	var n int
-
 	fn := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, err := websocket.Accept(w, r, websocket.AcceptOptions{InsecureSkipVerify: true})
+		conn, _, _, err := ws.UpgradeHTTP(r, w)
 		if err != nil {
-			fmt.Println(err)
+			log.Fatalf("WS upgrade failed because %v\n", err)
 			return
 		}
-		defer c.Close(websocket.StatusInternalError, "HandleConnection: the sky is falling")
-
-		ctx, cancel := context.WithCancel(r.Context())
-		defer cancel()
 
 		//subscribe this new client
 		messagesForMe := make(chan message, 2)
@@ -45,84 +37,51 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 			fmt.Printf("Disconnected %v, deleting from topics\n", client)
 		}()
 
-		//typ, reader, err := c.Reader(ctx)
-		//n, err = reader.Read(buf)
-		//fmt.Printf("%v %v", typ, n)
-		readerReturnsChan := make(chan readerReturns)
-		readerFinishedChan := make(chan int)
+		var localWG sync.WaitGroup
 
+		localWG.Add(2)
+		// read from client
 		go func() {
+			defer localWG.Done()
 			for {
-				select {
-				case <-readerFinishedChan:
-					typ, reader, err := c.Reader(ctx)
-					readerReturnsChan <- readerReturns{typ, reader, err}
-				case <-closed:
-					return
-				default:
 
+				msg, op, err := wsutil.ReadClientData(conn)
+				if err == nil {
+					messagesFromMe <- message{sender: client, op: op, data: msg}
+				} else {
+					log.Printf("Error on read because %v\n", err)
+					return
 				}
 			}
 		}()
 
-		readerFinishedChan <- 0 //start the cycle off with a wait for a read
+		//write to client
+		go func() {
+			defer conn.Close()
+			defer localWG.Done()
+			for {
+				select {
+				case msg := <-messagesForMe:
+					err = wsutil.WriteServerMessage(conn, msg.op, msg.data)
+					if err != nil {
+						log.Printf("Fatal error on write because %v", err)
+						return
+					}
 
-		for {
-			select {
-
-			case readerDetails := <-readerReturnsChan:
-
-				if readerDetails.err != nil {
+				case <-closed:
 					return
-				}
+				} //select
+			} //for
+		}() //func
 
-				n, err = readerDetails.reader.Read(buf)
-
-				if err != nil {
-					if err != io.EOF {
-						fmt.Println("Read:", err)
-					}
-				}
-				messagesFromMe <- message{sender: client, typ: readerDetails.typ, data: buf[:n]}
-				readerFinishedChan <- 0
-
-			case msg := <-messagesForMe:
-				w, err := c.Writer(ctx, msg.typ)
-
-				if err != nil {
-					fmt.Println("HandleConnections: io.Writer", err)
-				}
-
-				n, err = w.Write(msg.data)
-
-				if n != len(msg.data) {
-					fmt.Println("HandleConnections: Mismatch write lengths, overflow?")
-
-				}
-
-				if err != nil {
-					if err != io.EOF {
-						fmt.Println("Write:", err)
-					}
-				}
-
-				err = w.Close() // do every write to flush frame
-				if err != nil {
-					fmt.Println("Closing Write failed:", err)
-				}
-			case <-closed:
-				c.Close(websocket.StatusNormalClosure, "")
-				return
-			}
-		}
-
+		localWG.Wait()
 	}) //end of fun definition
-	fmt.Printf("host %v\n", host)
+
 	addr := strings.Join([]string{host.Hostname(), ":", host.Port()}, "")
-	fmt.Printf("addr %v\n", addr)
 	log.Printf("Starting listener on %s\n", addr)
 	err := http.ListenAndServe(addr, fn)
-	//err := http.ListenAndServe("localhost:8097", fn)
-	log.Fatal(err)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 }

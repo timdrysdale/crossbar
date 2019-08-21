@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/gobwas/ws"
 )
 
 func TestHandleMessages(t *testing.T) {
@@ -55,9 +55,9 @@ func TestHandleMessages(t *testing.T) {
 
 	//make test messages
 	b1 := []byte{'c', 'r', 'o', 's', 's'}
-	var testMessage1 = message{sender: client1, typ: websocket.BinaryMessage, data: b1}
+	var testMessage1 = message{sender: client1, op: ws.OpBinary, data: b1}
 	b2 := []byte{'b', 'a', 'r'}
-	var testMessage2 = message{sender: client3, typ: websocket.BinaryMessage, data: b2}
+	var testMessage2 = message{sender: client3, op: ws.OpBinary, data: b2}
 
 	// send some messages on behalf the clients
 	messagesChan <- testMessage1
@@ -94,7 +94,7 @@ func TestHandleMessages(t *testing.T) {
 	//swapping clients like this detected that sending clients were being unsubscribed
 	//so keep the test like this (sending to a previous sender)
 	b3 := []byte{'f', 'o', 'o'}
-	var testMessage3 = message{sender: client2, typ: websocket.BinaryMessage, data: b2}
+	var testMessage3 = message{sender: client2, op: ws.OpBinary, data: b2}
 
 	messagesChan <- testMessage3
 

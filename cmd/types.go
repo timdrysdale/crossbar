@@ -1,16 +1,15 @@
 package cmd
 
 import (
-	"io"
 	"sync"
 
-	"nhooyr.io/websocket"
+	"github.com/gobwas/ws"
 )
 
 // messages will be wrapped in this struct for muxing
 type message struct {
 	sender clientDetails
-	typ    websocket.MessageType
+	op     ws.OpCode
 	data   []byte //text data are converted to/from bytes as needed
 }
 
@@ -40,10 +39,9 @@ type topicDirectory struct {
 	directory map[string][]clientDetails
 }
 
-type readerReturns struct {
-	typ    websocket.MessageType
-	reader io.Reader
-	err    error
+// gobwas/ws
+type readClientDataReturns struct {
+	msg []byte
+	op  ws.OpCode
+	err error
 }
-
-//MessageType, io.Reader, error
