@@ -17,7 +17,14 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 	defer wg.Done()
 
 	fn := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, _, _, err := ws.UpgradeHTTP(r, w)
+
+		var HTTPUpgrader ws.HTTPUpgrader
+
+		// chrome needs this to connect
+		HTTPUpgrader.Protocol = func(str string) bool { return true }
+
+		conn, _, _, err := HTTPUpgrader.Upgrade(r, w)
+
 		if err != nil {
 			log.Fatalf("WS upgrade failed because %v\n", err)
 			return
