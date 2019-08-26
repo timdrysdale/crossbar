@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -31,12 +30,15 @@ func distributeMessage(topics *topicDirectory, msg message) {
 		if destination.name != msg.sender.name {
 			//non-blocking write to chan - skips if can't write
 			//go func() { destination.messagesChan <- message }()
-			select {
-			case destination.messagesChan <- msg:
-				//fmt.Printf("sent %v to %v", destination, msg)
-			default:
-				fmt.Printf("Warn: not sending message to %v (%v)\n", destination, msg) //TODO log this "properly"
-			}
+
+			destination.messagesChan <- msg //we're dropping a lot of messages so try this for now
+
+			//select {
+			//case destination.messagesChan <- msg:
+			//	//fmt.Printf("sent %v to %v", destination, msg)
+			//default:
+			//	fmt.Printf("Warn: not sending message to %v (%v)\n", destination, msg) //TODO log this "properly"
+			//}
 		}
 	}
 
