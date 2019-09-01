@@ -3,6 +3,7 @@ package cmd
 import (
 	"sync"
 
+	"github.com/eclesh/welford"
 	"github.com/gobwas/ws"
 )
 
@@ -44,4 +45,20 @@ type readClientDataReturns struct {
 	msg []byte
 	op  ws.OpCode
 	err error
+}
+
+type summaryStats struct {
+	topic map[string]topicStats
+}
+
+type topicStats struct {
+	audience *welford.Stats
+	size     *welford.Stats
+	rx       map[string]int
+}
+
+type messageStats struct {
+	topic string
+	rx    []string
+	size  int
 }

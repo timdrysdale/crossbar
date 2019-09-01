@@ -17,16 +17,16 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"os/signal"
 	"runtime/pprof"
 	"sync"
 
-	"github.com/spf13/cobra"
-
 	homedir "github.com/mitchellh/go-homedir"
+	log "github.com/sirupsen/logrus"
+
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
@@ -36,6 +36,7 @@ var cpuprofile string
 var host *url.URL
 var listen string
 var logFile string
+var development bool
 
 /* configuration
 
@@ -54,6 +55,31 @@ and can handle binary and text messages.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
+
+		fmt.Printf("Devmode? %v\n", development)
+		if development {
+
+			// development environment
+			log.SetFormatter(&log.TextFormatter{})
+			log.SetLevel(log.TraceLevel)
+			log.SetOutput(os.Stdout)
+			fmt.Println("Setting log output to stdout")
+
+		} else {
+
+			//production environment
+			log.SetFormatter(&log.JSONFormatter{})
+			log.SetLevel(log.WarnLevel)
+
+			file, err := os.OpenFile("crossbar.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+			if err == nil {
+				log.SetOutput(file)
+				fmt.Println("Setting log output to file")
+			} else {
+				log.Info("Failed to log to file, using default stderr")
+			}
+
+		}
 
 		if cpuprofile != "" {
 			f, err := os.Create(cpuprofile)
@@ -126,6 +152,7 @@ func init() {
 	rootCmd.PersistentFlags().Int64Var(&bufferSize, "buffer", 32768, "bufferSize in bytes (default is 32,768)")
 	rootCmd.PersistentFlags().StringVar(&logFile, "log", "", "log file (default is STDOUT)")
 	rootCmd.PersistentFlags().StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile to file")
+	rootCmd.PersistentFlags().BoolVar(&development, "dev", false, "development environment")
 
 }
 
