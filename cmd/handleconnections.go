@@ -77,6 +77,9 @@ func relay(w http.ResponseWriter, r *http.Request, clientActionsChan chan client
 
 	//consider increasing buffer size (check traffic and performance first ...)
 
+	//TODO - restrict this to practable
+	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+
 	c, err := upgrader.Upgrade(w, r, nil)
 
 	if err != nil {
