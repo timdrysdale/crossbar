@@ -73,7 +73,8 @@ func relay(w http.ResponseWriter, r *http.Request, clientActionsChan chan client
 
 	//jsmpeg has a nil subprotocol but chrome needs sec-Websocket-Protocol back ....
 	// For gobwas/ws, this worked: HTTPUpgrader.Protocol = func(str string) bool { return true }
-	//this disnae work for gorilla strinliteral error ... upgrader.Subprotocols = make([]string{"nil"})
+	//this disnae work for gorilla strinliteral error ...
+	upgrader.Subprotocols = append(upgrader.Subprotocols, "null")
 
 	//consider increasing buffer size (check traffic and performance first ...)
 
