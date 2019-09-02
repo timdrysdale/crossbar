@@ -4,13 +4,12 @@ import (
 	"sync"
 
 	"github.com/eclesh/welford"
-	"github.com/gobwas/ws"
 )
 
 // messages will be wrapped in this struct for muxing
 type message struct {
 	sender clientDetails
-	op     ws.OpCode
+	mt     int
 	data   []byte //text data are converted to/from bytes as needed
 }
 
@@ -43,7 +42,7 @@ type topicDirectory struct {
 // gobwas/ws
 type readClientDataReturns struct {
 	msg []byte
-	op  ws.OpCode
+	mt  int
 	err error
 }
 
