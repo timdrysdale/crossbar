@@ -126,7 +126,7 @@ and can handle binary and text messages.`,
 		go HandleConnections(closed, &wg, clientActionsChan, messagesToDistribute, host)
 
 		//func HandleMessages(closed <-chan struct{}, wg *sync.WaitGroup, topics *topicDirectory, messagesChan <-chan message)
-		go HandleMessages(closed, &wg, &topics, messagesToDistribute)
+		//go HandleMessages(closed, &wg, &topics, messagesToDistribute)
 
 		//func HandleClients(closed <-chan struct{}, wg *sync.WaitGroup, topics *topicDirectory, clientActionsChan chan clientAction)
 		go HandleClients(closed, &wg, &topics, clientActionsChan)

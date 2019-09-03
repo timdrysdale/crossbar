@@ -1,15 +1,6 @@
 package cmd
 
-import (
-	"bytes"
-	"errors"
-	"sync"
-	"testing"
-	"time"
-
-	"github.com/gorilla/websocket"
-)
-
+/*
 func TestHandleMessages(t *testing.T) {
 
 	var wg sync.WaitGroup
@@ -126,3 +117,4 @@ func read(messageChannel chan message, timeout time.Duration) (message, error) {
 	}
 
 }
+*/

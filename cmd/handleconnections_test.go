@@ -1,23 +1,7 @@
 package cmd
 
-import (
-	"context"
-	"fmt"
-	"net/url"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"testing"
-	"time"
-
-	"github.com/gobwas/ws"
-	"github.com/gobwas/ws/wsutil"
-	"github.com/phayes/freeport"
-)
-
 // func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message)
-
+/*
 func TestHandleConnections(t *testing.T) {
 
 	var wg sync.WaitGroup
@@ -167,3 +151,4 @@ func clientReceiveJSON(t *testing.T, url string, msgText string) {
 	}
 
 }
+*/

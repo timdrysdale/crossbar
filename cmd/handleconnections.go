@@ -1,17 +1,192 @@
 package cmd
 
 import (
-	"io"
+	"flag"
 	"net/http"
 	"net/url"
-	"strings"
 	"sync"
+	"time"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
 	log "github.com/sirupsen/logrus"
 )
+
+const (
+	// Time allowed to write a message to the peer.
+	writeWait = 10 * time.Second
+
+	// Time allowed to read the next pong message from the peer.
+	pongWait = 60 * time.Second
+
+	// Send pings to peer with this period. Must be less than pongWait.
+	pingPeriod = (pongWait * 9) / 10
+
+	// Maximum message size allowed from peer (1MB)
+	// Typical key frame at 640x480 is 60 * 188B ~= 11kB
+	maxMessageSize = 1024 * 1024
+)
+
+var (
+	newline = []byte{'\n'}
+	space   = []byte{' '}
+)
+
+// 4096 Bytes is the approx average message size
+// this number does not limit message size
+// So for key frames we just make a few more syscalls
+// null subprotocol required by Chrome
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  4096,
+	WriteBufferSize: 4096,
+	Subprotocols:    []string{"null"},
+}
+
+// Client is a middleperson between the websocket connection and the hub.
+type Client struct {
+	hub *Hub
+
+	// The websocket connection.
+	conn *websocket.Conn
+
+	// Buffered channel of outbound messages.
+	send chan []byte
+
+	// string representing the path the client connected to
+	topic string
+}
+
+// readPump pumps messages from the websocket connection to the hub.
+//
+// The application runs readPump in a per-connection goroutine. The application
+// ensures that there is at most one reader on a connection by executing all
+// reads from this goroutine.
+func (c *Client) readPump() {
+	defer func() {
+		c.hub.unregister <- c
+		c.conn.Close()
+	}()
+	c.conn.SetReadLimit(maxMessageSize)
+	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+	for {
+		_, message, err := c.conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Errorf("error: %v", err)
+			}
+			break
+		}
+
+		c.hub.broadcast <- message
+	}
+}
+
+// writePump pumps messages from the hub to the websocket connection.
+//
+// A goroutine running writePump is started for each connection. The
+// application ensures that there is at most one writer to a connection by
+// executing all writes from this goroutine.
+func (c *Client) writePump() {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close()
+	}()
+	for {
+		select {
+		case message, ok := <-c.send:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				// The hub closed the channel.
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+
+			w, err := c.conn.NextWriter(websocket.BinaryMessage)
+			if err != nil {
+				return
+			}
+			w.Write(message)
+
+			// Add queued chunks to the current websocket message, without delimiter.
+			n := len(c.send)
+			for i := 0; i < n; i++ {
+				w.Write(<-c.send)
+			}
+
+			if err := w.Close(); err != nil {
+				return
+			}
+		case <-ticker.C:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// serveWs handles websocket requests from the peer.
+func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
+	client.hub.register <- client
+
+	// Allow collection of memory referenced by the caller by doing all work in
+	// new goroutines.
+	go client.writePump()
+	go client.readPump()
+}
+
+var addr = flag.String("addr", ":8080", "http service address")
+
+func serveHome(w http.ResponseWriter, r *http.Request) {
+	log.Println(r.URL)
+	if r.URL.Path != "/" {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	http.ServeFile(w, r, "home.html")
+}
+
+/*func main() {
+	flag.Parse()
+	hub := newHub()
+	go hub.run()
+	http.HandleFunc("/", serveHome)
+	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		serveWs(hub, w, r)
+	})
+	err := http.ListenAndServe(*addr, nil)
+	if err != nil {
+		log.Fatal("ListenAndServe: ", err)
+	}
+}*/
+
+func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message, host *url.URL) {
+	hub := newHub()
+	go hub.run()
+	http.HandleFunc("/", serveHome)
+	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		serveWs(hub, w, r)
+	})
+	err := http.ListenAndServe(*addr, nil)
+	if err != nil {
+		log.Fatal("ListenAndServe: ", err)
+	}
+	wg.Done()
+}
+
+/*
 
 func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message, host *url.URL) {
 
@@ -193,7 +368,23 @@ func relay(w http.ResponseWriter, r *http.Request, clientActionsChan chan client
 		for {
 			select {
 
-			case msg := <-messagesForMe:
+			case msg, ok := <-messagesForMe:
+
+				if !ok {
+					//our channel has been closed by distributeMessages
+					log.WithFields(log.Fields{
+						"error":  err,
+						"func":   "HandlerFunc.Write",
+						"name":   name,
+						"r":      r,
+						"topic":  topic,
+						"msg.mt": msg.mt,
+						"len":    len(msg.data),
+					}).Warn("Messages channel has been closed...")
+
+					return
+
+				}
 
 				err = c.WriteMessage(msg.mt, msg.data)
 
@@ -238,3 +429,4 @@ func relay(w http.ResponseWriter, r *http.Request, clientActionsChan chan client
 	localWG.Wait()
 
 }
+*/
