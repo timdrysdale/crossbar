@@ -36,10 +36,12 @@ var (
 // this number does not limit message size
 // So for key frames we just make a few more syscalls
 // null subprotocol required by Chrome
+// TODO restrict CheckOrigin
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  4096,
 	WriteBufferSize: 4096,
 	Subprotocols:    []string{"null"},
+	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
 // Client is a middleperson between the websocket connection and the hub.
