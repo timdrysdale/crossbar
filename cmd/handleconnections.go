@@ -175,8 +175,8 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message, host *url.URL) {
 	hub := newHub()
 	go hub.run()
-	http.HandleFunc("/", serveHome)
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+	//	http.HandleFunc("/", serveHome)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		serveWs(hub, w, r)
 	})
 	err := http.ListenAndServe(*addr, nil)
