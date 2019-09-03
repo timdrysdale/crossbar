@@ -22,9 +22,9 @@ const (
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
 
-	// Maximum message size allowed from peer (1MB)
+	// Maximum message size allowed from peer (10MB)
 	// Typical key frame at 640x480 is 60 * 188B ~= 11kB
-	maxMessageSize = 1024 * 1024
+	maxMessageSize = 1024 * 1024 * 10
 )
 
 var (
