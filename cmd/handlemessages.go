@@ -29,6 +29,9 @@ func (h *Hub) run() {
 	for {
 		select {
 		case client := <-h.register:
+			if _, ok := h.clients[client.topic]; !ok {
+				h.clients[client.topic] = make(map[*Client]bool)
+			}
 			h.clients[client.topic][client] = true
 		case client := <-h.unregister:
 			if _, ok := h.clients[client.topic]; ok {
