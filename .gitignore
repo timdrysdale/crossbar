@@ -6,6 +6,7 @@
 *.dylib
 *.go~
 *.md~
+crossbar
 # Test binary, build with `go test -c`
 *.test
 

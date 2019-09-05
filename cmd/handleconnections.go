@@ -116,6 +116,8 @@ func (c *Client) statsReporter() {
 					Topic:       client.topic,
 					Broadcaster: client.broadcaster,
 					Connected:   client.stats.connectedAt.String(),
+					RemoteAddr:  client.remoteAddr,
+					UserAgent:   client.userAgent,
 					Stats: RxTx{
 						Tx: tx,
 						Rx: rx,
@@ -272,7 +274,16 @@ func serveWs(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Re
 	rx := &Frames{size: welford.New(), ns: welford.New()}
 	stats := &Stats{connectedAt: time.Now(), tx: tx, rx: rx}
 
-	client := &Client{hub: hub, conn: conn, send: make(chan message, 256), topic: topic, broadcaster: broadcaster, stats: stats, name: uuid.New().String()}
+	client := &Client{hub: hub,
+		conn:        conn,
+		send:        make(chan message, 256),
+		topic:       topic,
+		broadcaster: broadcaster,
+		stats:       stats,
+		name:        uuid.New().String(),
+		userAgent:   r.UserAgent(),
+		remoteAddr:  r.RemoteAddr,
+	}
 	client.hub.register <- client
 
 	// Allow collection of memory referenced by the caller by doing all work in

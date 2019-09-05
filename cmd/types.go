@@ -27,6 +27,10 @@ type Client struct {
 	stats *Stats
 
 	name string
+
+	userAgent string
+
+	remoteAddr string
 }
 
 type RxTx struct {
@@ -49,6 +53,10 @@ type ClientReport struct {
 	Broadcaster bool `json:"broadcaster"`
 
 	Connected string `json:"connected"`
+
+	RemoteAddr string `json:"remoteAddr"`
+
+	UserAgent string `json:"userAgent"`
 
 	Stats RxTx `json:"stats"`
 }
