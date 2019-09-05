@@ -49,7 +49,7 @@
 
   var somePackage = {};
   somePackage.connect = function()  {
-  var ws = new WebSocket('ws://'+document.location.host+'/ws');
+  var ws = new WebSocket('wss://'+document.location.host+'/ws');
   ws.onopen = function() {
   console.log('ws connected');
   somePackage.ws = ws;
