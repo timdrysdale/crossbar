@@ -2,12 +2,16 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
+	"math"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/eclesh/welford"
 	"github.com/gorilla/websocket"
 
 	log "github.com/sirupsen/logrus"
@@ -45,25 +49,70 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-// Client is a middleperson between the websocket connection and the hub.
-type Client struct {
-	hub *Hub
-
-	// The websocket connection.
-	conn *websocket.Conn
-
-	// Buffered channel of outbound messages.
-	send chan message
-
-	// string representing the path the client connected to
-	topic string
+func fpsFromNs(ns float64) float64 {
+	return 1 / (ns * 1e-9)
 }
 
-// messages will be wrapped in this struct for muxing
-type message struct {
-	sender Client
-	mt     int
-	data   []byte //text data are converted to/from bytes as needed
+func (c *Client) statsReporter() {
+	defer func() {
+		c.conn.Close()
+	}()
+	c.conn.SetReadLimit(maxMessageSize)
+	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+	for {
+		_, _, err := c.conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.WithField("error", err).Error("statsReporter ReadMessage")
+			}
+			break
+		}
+
+		for _, topic := range c.hub.clients {
+			for client, _ := range topic {
+
+				c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+
+				w, err := c.conn.NextWriter(websocket.TextMessage)
+				if err != nil {
+					return
+				}
+
+				report := &ClientReport{
+					Topic:       client.topic,
+					Broadcaster: client.broadcaster,
+					Connected:   client.stats.connectedAt.String(),
+					Stats: RxTx{
+						Tx: ReportStats{
+							Last: time.Since(client.stats.tx.last).String(),
+							Size: math.Round(client.stats.tx.size.Mean()),
+							Fps:  fpsFromNs(client.stats.tx.ns.Mean()),
+						},
+						Rx: ReportStats{
+							Last: time.Since(client.stats.rx.last).String(),
+							Size: math.Round(client.stats.rx.size.Mean()),
+							Fps:  fpsFromNs(client.stats.rx.ns.Mean()),
+						},
+					},
+				}
+
+				b, err := json.Marshal(report)
+
+				if err != nil {
+					log.WithField("error", err).Error("statsReporter marshalling JSON")
+					return
+				} else {
+					w.Write(b)
+				}
+
+				if err := w.Close(); err != nil {
+					return
+				}
+			}
+		}
+
+	}
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -71,7 +120,7 @@ type message struct {
 // The application runs readPump in a per-connection goroutine. The application
 // ensures that there is at most one reader on a connection by executing all
 // reads from this goroutine.
-func (c *Client) readPump() {
+func (c *Client) readPump(broadcaster bool) {
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close()
@@ -88,7 +137,23 @@ func (c *Client) readPump() {
 			break
 		}
 
-		c.hub.broadcast <- message{sender: *c, data: data, mt: mt}
+		if broadcaster {
+
+			c.hub.broadcast <- message{sender: *c, data: data, mt: mt}
+
+			t := time.Now()
+			if c.stats.tx.ns.Count() > 0 {
+				c.stats.tx.ns.Add(float64(t.UnixNano() - c.stats.tx.last.UnixNano()))
+			} else {
+				c.stats.tx.ns.Add(float64(t.UnixNano() - c.stats.connectedAt.UnixNano()))
+			}
+			c.stats.tx.last = t
+			c.stats.tx.size.Add(float64(len(data)))
+
+		} else {
+			log.WithFields(log.Fields{"data": data, "sender": c, "topic": c.topic, "mt": mt}).Warn("Incoming message from non-broadcaster")
+		}
+
 	}
 }
 
@@ -117,14 +182,27 @@ func (c *Client) writePump(closed <-chan struct{}) {
 			if err != nil {
 				return
 			}
+
 			w.Write(message.data)
+
+			size := len(message.data)
 
 			// Add queued chunks to the current websocket message, without delimiter.
 			n := len(c.send)
 			for i := 0; i < n; i++ {
 				followOnMessage := <-c.send
 				w.Write(followOnMessage.data)
+				size += len(followOnMessage.data)
 			}
+
+			t := time.Now()
+			if c.stats.rx.ns.Count() > 0 {
+				c.stats.rx.ns.Add(float64(t.UnixNano() - c.stats.rx.last.UnixNano()))
+			} else {
+				c.stats.rx.ns.Add(float64(t.UnixNano() - c.stats.connectedAt.UnixNano()))
+			}
+			c.stats.rx.last = t
+			c.stats.rx.size.Add(float64(size))
 
 			if err := w.Close(); err != nil {
 				return
@@ -144,24 +222,56 @@ func (c *Client) writePump(closed <-chan struct{}) {
 func serveWs(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		log.WithField("error", err).Error("Upgrading serveWs")
 		return
 	}
-	//TODO check buffer size impact on memory ....
-	client := &Client{hub: hub, conn: conn, send: make(chan message, 256), topic: r.URL.Path}
+
+	// reuse our existing hub which does not know about permissions
+	// so enforce in readPump by ignoring messages when the client has
+	// no permission to input messages to the crossbar for broadcast
+	// i.e. any client connecting to /out/<rest/of/path>
+	broadcaster := true
+	topic := slashify(r.URL.Path)
+	if strings.HasPrefix(topic, "/out/") {
+		// we're a receiver-only, so
+		// prevent any messages being broadcast from this client
+		broadcaster = false
+	} else if strings.HasPrefix(topic, "/in/") {
+		// we're a sender to receiver only clients, hence
+		// convert topic so we write to those receiving clients
+		topic = strings.Replace(topic, "/in", "/out", 1)
+	} // else do nothing i.e. permit bidirectional messaging at other endpoints
+
+	// initialise statistics
+	tx := &Frames{size: welford.New(), ns: welford.New()}
+	rx := &Frames{size: welford.New(), ns: welford.New()}
+	stats := &Stats{connectedAt: time.Now(), tx: tx, rx: rx}
+
+	client := &Client{hub: hub, conn: conn, send: make(chan message, 256), topic: topic, broadcaster: broadcaster, stats: stats}
 	client.hub.register <- client
 
 	// Allow collection of memory referenced by the caller by doing all work in
 	// new goroutines.
 	go client.writePump(closed)
-	go client.readPump()
+	go client.readPump(broadcaster)
+}
+
+func serveStats(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.WithField("error", err).Error("Upgrading serveStats")
+		return
+	}
+
+	client := &Client{hub: hub, conn: conn}
+	go client.statsReporter()
 }
 
 var addr = flag.String("addr", ":8080", "http service address")
 
-func serveHome(w http.ResponseWriter, r *http.Request) {
+func servePage(w http.ResponseWriter, r *http.Request) {
 	log.Println(r.URL)
-	if r.URL.Path != "/" {
+	if r.URL.Path != "/stats" {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
@@ -169,15 +279,19 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	http.ServeFile(w, r, "home.html")
+	http.ServeFile(w, r, "stats.html")
 }
 
 func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message, host *url.URL) {
 	hub := newHub()
 	go hub.run()
-	//	http.HandleFunc("/", serveHome)
+
+	http.HandleFunc("/stats", servePage)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		serveWs(closed, hub, w, r)
+	})
+	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		serveStats(closed, hub, w, r)
 	})
 
 	h := &http.Server{Addr: *addr, Handler: nil}
@@ -195,248 +309,3 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 	h.Shutdown(ctx)
 	wg.Done()
 }
-
-/*
-
-func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message, host *url.URL) {
-
-	defer func() {
-		log.WithFields(log.Fields{
-			"func": "HandleConnections",
-			"verb": "closed",
-		}).Trace("HandleConnections closed")
-		wg.Done()
-	}()
-
-	addr := strings.Join([]string{host.Hostname(), ":", host.Port()}, "")
-
-	log.WithFields(log.Fields{
-		"func": "HandleConnections",
-		"verb": "starting",
-		"addr": addr,
-	}).Info("Starting http.ListenAndServe")
-
-	// wrap in the extra arguments we need
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { relay(w, r, clientActionsChan, messagesFromMe, closed) })
-
-	err := http.ListenAndServe(addr, nil)
-
-	if err != nil {
-
-		log.WithFields(log.Fields{
-			"error": err,
-			"func":  "HandleConnections",
-			"addr":  addr,
-		}).Fatal("Error with http.ListenAndServe")
-	}
-}
-
-func relay(w http.ResponseWriter, r *http.Request, clientActionsChan chan clientAction, messagesFromMe chan message, closed <-chan struct{}) {
-
-	name := uuid.New().String()
-	topic := r.URL.Path
-
-	log.WithFields(log.Fields{
-		"func":  "HandlerFunc",
-		"name":  name,
-		"r":     r,
-		"topic": topic,
-		"verb":  "started",
-	}).Trace("HandlerFunc started")
-
-	defer func() {
-		log.WithFields(log.Fields{
-			"func":  "HandlerFunc",
-			"name":  name,
-			"r":     r,
-			"topic": topic,
-			"verb":  "stopped",
-		}).Trace("HandlerFunc stopped")
-	}()
-
-	var upgrader = websocket.Upgrader{}
-
-	//jsmpeg has a nil subprotocol but chrome needs sec-Websocket-Protocol back ....
-	// For gobwas/ws, this worked: HTTPUpgrader.Protocol = func(str string) bool { return true }
-	//this disnae work for gorilla strinliteral error ...
-	upgrader.Subprotocols = append(upgrader.Subprotocols, "null")
-
-	//consider increasing buffer size (check traffic and performance first ...)
-
-	//TODO - restrict this to practable
-	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
-
-	c, err := upgrader.Upgrade(w, r, nil)
-
-	if err != nil {
-		log.WithFields(log.Fields{
-			"error": err,
-			"func":  "HandlerFunc",
-			"name":  name,
-			"r":     r,
-			"topic": topic,
-		}).Fatal("WS upgrade failed")
-		return
-	}
-
-	defer c.Close()
-
-	//subscribe this new client with a channel to receive messages
-	messagesForMe := make(chan message, 3) // TODO make configurable
-	client := clientDetails{name: name, topic: topic, messagesChan: messagesForMe}
-
-	log.WithFields(log.Fields{
-		"topic":  client.topic,
-		"client": client,
-		"name":   name,
-		"r":      r,
-		"verb":   "subscribe",
-	}).Debug("Subscribing client to topic") //HandleClients does the info level
-
-	clientActionsChan <- clientAction{action: clientAdd, client: client}
-
-	defer func() {
-		clientActionsChan <- clientAction{action: clientDelete, client: client}
-
-		log.WithFields(log.Fields{
-			"topic":  client.topic,
-			"client": client,
-			"name":   name,
-			"r":      r,
-			"verb":   "unsubscribe",
-		}).Debug("Disconnected; unsubscribing client from topic") //HandleClients does the info level
-	}()
-
-	var localWG sync.WaitGroup
-	localWG.Add(2)
-
-	// read from client
-	go func() {
-
-		defer func() {
-			log.WithFields(log.Fields{
-				"func":  "HandlerFunc.Read",
-				"name":  name,
-				"r":     r,
-				"topic": topic,
-				"verb":  "stopped",
-			}).Trace("HandlerFunc.Read stopped")
-			localWG.Done()
-		}()
-
-		for {
-
-			mt, msg, err := c.ReadMessage()
-
-			if err == nil {
-
-				// pass on the message ... (assume handleMessages will do stats)
-				messagesFromMe <- message{sender: client, mt: mt, data: msg}
-
-			} else if err == io.EOF {
-
-				// we must be disconnecting, clean up is handled elsewhere
-				log.WithFields(log.Fields{
-					"func":  "HandlerFunc.Read",
-					"name":  name,
-					"r":     r,
-					"topic": topic,
-					"verb":  "EOF",
-				}).Trace("HandlerFunc.Read got EOF")
-
-				return
-
-			} else {
-
-				log.WithFields(log.Fields{
-					"error": err,
-					"func":  "HandlerFunc.Read",
-					"name":  name,
-					"r":     r,
-					"topic": topic,
-				}).Warn("Error on WS read")
-
-				return
-			}
-		}
-	}()
-
-	//write to client
-	go func() {
-
-		defer func() {
-			log.WithFields(log.Fields{
-				"func":  "HandlerFunc.Write",
-				"name":  name,
-				"r":     r,
-				"topic": topic,
-				"verb":  "stopped",
-			}).Trace("HandlerFunc.Write stopped")
-			localWG.Done()
-		}()
-
-		for {
-			select {
-
-			case msg, ok := <-messagesForMe:
-
-				if !ok {
-					//our channel has been closed by distributeMessages
-					log.WithFields(log.Fields{
-						"error":  err,
-						"func":   "HandlerFunc.Write",
-						"name":   name,
-						"r":      r,
-						"topic":  topic,
-						"msg.mt": msg.mt,
-						"len":    len(msg.data),
-					}).Warn("Messages channel has been closed...")
-
-					return
-
-				}
-
-				err = c.WriteMessage(msg.mt, msg.data)
-
-				if err != nil {
-
-					log.WithFields(log.Fields{
-						"error":  err,
-						"func":   "HandlerFunc.Write",
-						"name":   name,
-						"r":      r,
-						"topic":  topic,
-						"msg.mt": msg.mt,
-						"len":    len(msg.data),
-					}).Warn("Error on WS write")
-
-					return
-				}
-
-			case <-closed:
-
-				log.WithFields(log.Fields{
-					"func":  "HandlerFunc.Write",
-					"name":  name,
-					"r":     r,
-					"topic": topic,
-					"verb":  "received close",
-				}).Trace("HandlerFunc.Write received close")
-				return
-
-			} //select
-		} //for
-	}() //func
-
-	log.WithFields(log.Fields{
-		"func":  "HandlerFunc",
-		"name":  name,
-		"r":     r,
-		"topic": topic,
-		"verb":  "waiting",
-	}).Trace("HandlerFunc waiting to stop")
-
-	localWG.Wait()
-
-}
-*/

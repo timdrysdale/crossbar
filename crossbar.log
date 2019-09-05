@@ -1,0 +1,29 @@
+{"error":"websocket: close 1005 (no status)","level":"error","msg":"statsReporter ReadMessage","time":"2019-09-05T21:06:22+01:00"}
+{"level":"fatal","msg":"ListenAndServe: http: Server closed","time":"2019-09-05T21:06:28+01:00"}
+{"level":"fatal","msg":"ListenAndServe: http: Server closed","time":"2019-09-05T21:09:18+01:00"}
+{"error":"websocket: the client is not using the websocket protocol: 'upgrade' token not found in 'Connection' header","level":"error","msg":"Upgrading serveWs","time":"2019-09-05T21:09:37+01:00"}
+{"error":"websocket: the client is not using the websocket protocol: 'upgrade' token not found in 'Connection' header","level":"error","msg":"Upgrading serveWs","time":"2019-09-05T21:09:42+01:00"}
+{"error":"websocket: the client is not using the websocket protocol: 'upgrade' token not found in 'Connection' header","level":"error","msg":"Upgrading serveWs","time":"2019-09-05T21:09:47+01:00"}
+{"error":"websocket: the client is not using the websocket protocol: 'upgrade' token not found in 'Connection' header","level":"error","msg":"Upgrading serveWs","time":"2019-09-05T21:09:50+01:00"}
+{"error":"websocket: the client is not using the websocket protocol: 'upgrade' token not found in 'Connection' header","level":"error","msg":"Upgrading serveWs","time":"2019-09-05T21:10:17+01:00"}
+{"level":"fatal","msg":"ListenAndServe: http: Server closed","time":"2019-09-05T21:10:54+01:00"}
+{"error":"websocket: the client is not using the websocket protocol: 'upgrade' token not found in 'Connection' header","level":"error","msg":"Upgrading serveWs","time":"2019-09-05T21:11:00+01:00"}
+{"error":"websocket: the client is not using the websocket protocol: 'upgrade' token not found in 'Connection' header","level":"error","msg":"Upgrading serveWs","time":"2019-09-05T21:11:14+01:00"}
+{"error":"websocket: the client is not using the websocket protocol: 'upgrade' token not found in 'Connection' header","level":"error","msg":"Upgrading serveWs","time":"2019-09-05T21:11:38+01:00"}
+{"error":"websocket: close 1005 (no status)","level":"error","msg":"statsReporter ReadMessage","time":"2019-09-05T21:14:23+01:00"}
+{"level":"fatal","msg":"ListenAndServe: http: Server closed","time":"2019-09-05T21:19:06+01:00"}
+{"level":"fatal","msg":"ListenAndServe: http: Server closed","time":"2019-09-05T21:23:18+01:00"}
+{"level":"fatal","msg":"ListenAndServe: http: Server closed","time":"2019-09-05T21:25:08+01:00"}
+{"level":"fatal","msg":"ListenAndServe: http: Server closed","time":"2019-09-05T21:26:00+01:00"}
+{"level":"fatal","msg":"ListenAndServe: http: Server closed","time":"2019-09-05T21:28:47+01:00"}
+{"error":"json: unsupported value: +Inf","level":"error","msg":"statsReporter marshalling JSON","time":"2019-09-05T21:28:55+01:00"}
+{"error":"json: unsupported value: +Inf","level":"error","msg":"statsReporter marshalling JSON","time":"2019-09-05T21:28:58+01:00"}
+{"error":"json: unsupported value: +Inf","level":"error","msg":"statsReporter marshalling JSON","time":"2019-09-05T21:28:59+01:00"}
+{"error":"json: unsupported value: +Inf","level":"error","msg":"statsReporter marshalling JSON","time":"2019-09-05T21:29:00+01:00"}
+{"error":"json: unsupported value: +Inf","level":"error","msg":"statsReporter marshalling JSON","time":"2019-09-05T21:29:01+01:00"}
+{"level":"fatal","msg":"ListenAndServe: http: Server closed","time":"2019-09-05T21:30:40+01:00"}
+{"error":"json: unsupported value: +Inf","level":"error","msg":"statsReporter marshalling JSON","time":"2019-09-05T21:30:50+01:00"}
+{"error":"json: unsupported value: +Inf","level":"error","msg":"statsReporter marshalling JSON","time":"2019-09-05T21:30:52+01:00"}
+{"error":"json: unsupported value: +Inf","level":"error","msg":"statsReporter marshalling JSON","time":"2019-09-05T21:30:53+01:00"}
+{"level":"fatal","msg":"ListenAndServe: http: Server closed","time":"2019-09-05T21:31:19+01:00"}
+{"level":"fatal","msg":"ListenAndServe: http: Server closed","time":"2019-09-05T21:32:27+01:00"}

@@ -41,7 +41,7 @@ func (h *Hub) run() {
 		case message := <-h.broadcast:
 			topic := message.sender.topic
 			for client := range h.clients[topic] {
-				if client != &message.sender {
+				if client != &message.sender { //tODO fix!
 					select {
 					case client.send <- message:
 					default:
