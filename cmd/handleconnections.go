@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/eclesh/welford"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
 	log "github.com/sirupsen/logrus"
@@ -79,21 +80,45 @@ func (c *Client) statsReporter() {
 					return
 				}
 
+				var tx ReportStats
+
+				if client.stats.tx.size.Count() > 0 {
+					tx = ReportStats{
+						Last: time.Since(client.stats.tx.last).String(),
+						Size: math.Round(client.stats.tx.size.Mean()),
+						Fps:  fpsFromNs(client.stats.tx.ns.Mean()),
+					}
+				} else {
+					tx = ReportStats{
+						Last: "Never",
+						Size: 0,
+						Fps:  0,
+					}
+				}
+
+				var rx ReportStats
+
+				if client.stats.rx.size.Count() > 0 {
+					rx = ReportStats{
+						Last: time.Since(client.stats.rx.last).String(),
+						Size: math.Round(client.stats.rx.size.Mean()),
+						Fps:  fpsFromNs(client.stats.rx.ns.Mean()),
+					}
+				} else {
+					rx = ReportStats{
+						Last: "Never",
+						Size: 0,
+						Fps:  0,
+					}
+				}
+
 				report := &ClientReport{
 					Topic:       client.topic,
 					Broadcaster: client.broadcaster,
 					Connected:   client.stats.connectedAt.String(),
 					Stats: RxTx{
-						Tx: ReportStats{
-							Last: time.Since(client.stats.tx.last).String(),
-							Size: math.Round(client.stats.tx.size.Mean()),
-							Fps:  fpsFromNs(client.stats.tx.ns.Mean()),
-						},
-						Rx: ReportStats{
-							Last: time.Since(client.stats.rx.last).String(),
-							Size: math.Round(client.stats.rx.size.Mean()),
-							Fps:  fpsFromNs(client.stats.rx.ns.Mean()),
-						},
+						Tx: tx,
+						Rx: rx,
 					},
 				}
 
@@ -247,7 +272,7 @@ func serveWs(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Re
 	rx := &Frames{size: welford.New(), ns: welford.New()}
 	stats := &Stats{connectedAt: time.Now(), tx: tx, rx: rx}
 
-	client := &Client{hub: hub, conn: conn, send: make(chan message, 256), topic: topic, broadcaster: broadcaster, stats: stats}
+	client := &Client{hub: hub, conn: conn, send: make(chan message, 256), topic: topic, broadcaster: broadcaster, stats: stats, name: uuid.New().String()}
 	client.hub.register <- client
 
 	// Allow collection of memory referenced by the caller by doing all work in

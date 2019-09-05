@@ -25,6 +25,8 @@ type Client struct {
 	broadcaster bool
 
 	stats *Stats
+
+	name string
 }
 
 type RxTx struct {
