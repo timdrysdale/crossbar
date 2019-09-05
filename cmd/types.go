@@ -6,13 +6,6 @@ import (
 	"github.com/eclesh/welford"
 )
 
-// messages will be wrapped in this struct for muxing
-type message struct {
-	sender clientDetails
-	mt     int
-	data   []byte //text data are converted to/from bytes as needed
-}
-
 type clientDetails struct {
 	name         string
 	topic        string

@@ -4,10 +4,10 @@ package cmd
 // clients.
 type Hub struct {
 	// Registered clients.
-	clients map[*Client]bool
+	clients map[string]map[*Client]bool
 
 	// Inbound messages from the clients.
-	broadcast chan []byte
+	broadcast chan message
 
 	// Register requests from the clients.
 	register chan *Client
@@ -18,10 +18,10 @@ type Hub struct {
 
 func newHub() *Hub {
 	return &Hub{
-		broadcast:  make(chan []byte),
+		broadcast:  make(chan message),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
-		clients:    make(map[*Client]bool),
+		clients:    make(map[string]map[*Client]bool),
 	}
 }
 
@@ -29,19 +29,22 @@ func (h *Hub) run() {
 	for {
 		select {
 		case client := <-h.register:
-			h.clients[client] = true
+			h.clients[client.topic][client] = true
 		case client := <-h.unregister:
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
+			if _, ok := h.clients[client.topic]; ok {
+				delete(h.clients[client.topic], client)
 				close(client.send)
 			}
 		case message := <-h.broadcast:
-			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(h.clients, client)
+			topic := message.sender.topic
+			for client := range h.clients[topic] {
+				if client != &message.sender {
+					select {
+					case client.send <- message:
+					default:
+						close(client.send)
+						delete(h.clients[topic], client)
+					}
 				}
 			}
 		}

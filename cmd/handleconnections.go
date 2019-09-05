@@ -53,10 +53,17 @@ type Client struct {
 	conn *websocket.Conn
 
 	// Buffered channel of outbound messages.
-	send chan []byte
+	send chan message
 
 	// string representing the path the client connected to
 	topic string
+}
+
+// messages will be wrapped in this struct for muxing
+type message struct {
+	sender Client
+	mt     int
+	data   []byte //text data are converted to/from bytes as needed
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -73,7 +80,7 @@ func (c *Client) readPump() {
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	for {
-		_, message, err := c.conn.ReadMessage()
+		mt, data, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Errorf("error: %v", err)
@@ -81,7 +88,7 @@ func (c *Client) readPump() {
 			break
 		}
 
-		c.hub.broadcast <- message
+		c.hub.broadcast <- message{sender: *c, data: data, mt: mt}
 	}
 }
 
@@ -106,16 +113,17 @@ func (c *Client) writePump(closed <-chan struct{}) {
 				return
 			}
 
-			w, err := c.conn.NextWriter(websocket.BinaryMessage)
+			w, err := c.conn.NextWriter(message.mt)
 			if err != nil {
 				return
 			}
-			w.Write(message)
+			w.Write(message.data)
 
 			// Add queued chunks to the current websocket message, without delimiter.
 			n := len(c.send)
 			for i := 0; i < n; i++ {
-				w.Write(<-c.send)
+				followOnMessage := <-c.send
+				w.Write(followOnMessage.data)
 			}
 
 			if err := w.Close(); err != nil {
@@ -139,7 +147,8 @@ func serveWs(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Re
 		log.Println(err)
 		return
 	}
-	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
+	//TODO check buffer size impact on memory ....
+	client := &Client{hub: hub, conn: conn, send: make(chan message, 256), topic: r.URL.Path}
 	client.hub.register <- client
 
 	// Allow collection of memory referenced by the caller by doing all work in
