@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"flag"
 	"net/http"
 	"net/url"
@@ -169,10 +170,20 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		serveWs(closed, hub, w, r)
 	})
-	err := http.ListenAndServe(*addr, nil)
-	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
-	}
+
+	h := &http.Server{Addr: *addr, Handler: nil}
+
+	go func() {
+		if err := h.ListenAndServe(); err != nil {
+			log.Fatal("ListenAndServe: ", err)
+		}
+	}()
+
+	<-closed
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	h.Shutdown(ctx)
 	wg.Done()
 }
 
