@@ -282,7 +282,7 @@ func serveWs(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Re
 		stats:       stats,
 		name:        uuid.New().String(),
 		userAgent:   r.UserAgent(),
-		remoteAddr:  r.RemoteAddr,
+		remoteAddr:  r.Header.Get("X-Forwarded-For"),
 	}
 	client.hub.register <- client
 
