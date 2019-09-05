@@ -89,7 +89,7 @@ func (c *Client) readPump() {
 // A goroutine running writePump is started for each connection. The
 // application ensures that there is at most one writer to a connection by
 // executing all writes from this goroutine.
-func (c *Client) writePump() {
+func (c *Client) writePump(closed <-chan struct{}) {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -125,12 +125,14 @@ func (c *Client) writePump() {
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
+		case <-closed:
+			return
 		}
 	}
 }
 
 // serveWs handles websocket requests from the peer.
-func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
+func serveWs(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
@@ -141,7 +143,7 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 
 	// Allow collection of memory referenced by the caller by doing all work in
 	// new goroutines.
-	go client.writePump()
+	go client.writePump(closed)
 	go client.readPump()
 }
 
@@ -160,26 +162,12 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "home.html")
 }
 
-/*func main() {
-	flag.Parse()
-	hub := newHub()
-	go hub.run()
-	http.HandleFunc("/", serveHome)
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		serveWs(hub, w, r)
-	})
-	err := http.ListenAndServe(*addr, nil)
-	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
-	}
-}*/
-
 func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message, host *url.URL) {
 	hub := newHub()
 	go hub.run()
 	//	http.HandleFunc("/", serveHome)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		serveWs(hub, w, r)
+		serveWs(closed, hub, w, r)
 	})
 	err := http.ListenAndServe(*addr, nil)
 	if err != nil {
