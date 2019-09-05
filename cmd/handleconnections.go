@@ -73,12 +73,12 @@ func (c *Client) statsReporter() {
 		for _, topic := range c.hub.clients {
 			for client, _ := range topic {
 
-				c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-
-				w, err := c.conn.NextWriter(websocket.TextMessage)
-				if err != nil {
-					return
-				}
+				//c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+				//
+				//w, err := c.conn.NextWriter(websocket.TextMessage)
+				//if err != nil {
+				//	return
+				//}
 
 				var tx ReportStats
 
@@ -130,15 +130,61 @@ func (c *Client) statsReporter() {
 					log.WithField("error", err).Error("statsReporter marshalling JSON")
 					return
 				} else {
-					w.Write(b)
+					c.send <- message{data: b, mt: websocket.TextMessage}
+					//w.Write(b)
 				}
 
-				if err := w.Close(); err != nil {
-					return
-				}
+				//if err := w.Close(); err != nil {
+				//	return
+				//}
 			}
 		}
 
+	}
+}
+
+func (c *Client) statsManager(closed <-chan struct{}) {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close()
+	}()
+	for {
+		select {
+		case message, ok := <-c.send:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				// The hub closed the channel.
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+
+			w, err := c.conn.NextWriter(message.mt)
+			if err != nil {
+				return
+			}
+
+			w.Write(message.data)
+
+			// commented out because need one object per message?
+			// Add queued chunks to the current websocket message, without delimiter.
+			//n := len(c.send)
+			//for i := 0; i < n; i++ {
+			//	followOnMessage := <-c.send
+			//	w.Write(followOnMessage.data)
+			//}
+
+			if err := w.Close(); err != nil {
+				return
+			}
+		case <-ticker.C:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		case <-closed:
+			return
+		}
 	}
 }
 
@@ -299,8 +345,9 @@ func serveStats(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http
 		return
 	}
 
-	client := &Client{hub: hub, conn: conn}
+	client := &Client{hub: hub, conn: conn, send: make(chan message, 256)}
 	go client.statsReporter()
+	go client.statsManager(closed)
 }
 
 var addr = flag.String("addr", ":8080", "http service address")
