@@ -48,8 +48,20 @@
   let rcols = ["topic","last","Avg size","FPS", "Connected","remoteAddr","userAgent"]
 
   var somePackage = {};
+
+  var scheme = 'wss://';
+
   somePackage.connect = function()  {
-  var ws = new WebSocket('wss://'+document.location.host+'/ws');
+
+	  if (document.location.host.startsWith('localhost')){	  
+		  scheme = 'ws://'
+	  }
+	  if (document.location.host.startsWith('127.0.0.1')){	  
+		  scheme = 'ws://'
+	  }
+	  
+	  
+  var ws = new WebSocket(scheme+document.location.host+'/ws');
   ws.onopen = function() {
   console.log('ws connected');
   somePackage.ws = ws;

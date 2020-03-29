@@ -1,139 +1,157 @@
 # Crossbar
+![alt text][logo]
+
 ![alt text][status]
+![alt text][coverage]
 
-Websocket relay server with topics 
-
-Features:
-
-1. user-configurable buffersize at startup (default 1,024,000 (1MB) with overlarge messages rejected and connection dropped)
-1. bidirectional message flow, that toleratese unidirectional message flow in practice 
-1. binary and text messages can be used in the same connection (TODO)
-1. topics set by incoming URL path 
-
-## Example use case:
-
-Problem: Relay video stream, data stream, and control messages between a remote experiment and a user.
-
-Solution: deploy instances of crossbar, one with a large buffersize and one with a small buffersize. Send video through the relay with the large buffer size, and data/control through the relay with the smaller buffer size. Protect endpoints with middleware such as gatekeeper or request authorisation in the reverse proxy.
+Crossbar relays websocket streams
 
 ## Why?
 
-Websocket relays are available in many guises, but I wanted to write this for the experience.
+Remote laboratories require a custom video and data communications eco-system in order to support their wider adoption. Key factors include:
 
-## Mux
++ Remote laboratory participants (whether human or machine) are often located behind institutional firewalls and NAT
++ Most instituational networks support particpants sending and receiving video and data to external relays, but not acting as a server
++ Those data streams are typically embedded in websockets, whereas UDP and some TCP protocols are sometimes explicitly blocked
++ Almost all video and data messaging vendors with relays are focused solely on human-human communications
+    + often missing apparently-minor features from the API that are key for remote lab experiments (e.g. being able to change camera programmatically)
+	+ often require workarounds for remote lab adminstration tasks which are prevented by privacy features in browsers (e.g. identifying cameras)
+	+ typically require x10 more expensive computer for the experiment because of the overhead of running graphical operating system and browser
+	+ most vendors can - quite rightly - only guarantee long-term support for users that conform to their core use-case
 
-A muxer is needed.
+## Features
 
-Candidates
++ binary and text websockets
++ multiple, independent streams
+    + organised by topics
+	+ topics set by routing
++ multiple streaming schemas	
+    + bidirectional N:N streaming
+    + unidirectional 1:N streaming
++ streaming schemas are 
+    + set by routing
+	+ individually selectable for each stream 
++ statistics are recorded, and available via
+    + websocket API in JSON format
+	+ human-readable webpage with 5sec update at ```<host>/stats```
+	
+## What's with the name?
+I once had an old IBM p690 compute cluster whose processor cores had crossbar switches ([Core Interface Units](http://www.netlib.org/utk/papers/advanced-computers/power4.html)) that connect any core with any cache, and [do so more efficiently than a standard compute cluster](http://www.piers.org/piersonline/pdf/Vol5No2Page117to120.pdf). It seemed apt, because this relay is about connecting any experiment with any human, more efficiently than existing systems, (in a holistic sense, including total cost and effort of ownership, administration, maintenance etc).
 
-Mangos
+## Performance
 
+After some profiling-led optimisation, I've run the code for four months continuously (as of March 2020) with multiple streams and re-connections of broadcasters and receivers, including a fortnight where a stream was connecting to a new routing every second (in a sequence of four) using a bash script and [timdrysdale/vw](https://github.com/timdrysdale/vw), with no appreciable leakage of memory.
 
+Further quantitative benchmarking is needed to understand how well crossbar scales to handle large numbers of streams and clients simultaneously, but from the perspective of a light user with around four video streams being in use for live demonstrations at any one time, it has performed well and given confidence. Performance at low N is no guarantee of performance at high N, so please conduct your own testing if adopting at this time (and share with me for inclusion here, via email or PR). 
 
-## Chat example
+Meanwhile, here's a text-grab from ```top``` on an Amazon EC2 ```c5.Large``` instance showing the same memory usage now as four months ago under the same load.
 
-So far this code is just the gorilla chat and a mod to make rooms
+```
+top - 12:57:15 up 232 days, 22:45, 14 users,  load average: 0.04, 0.04, 0.00
+Tasks: 123 total,   1 running,  83 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  2.0 us,  0.5 sy,  0.0 ni, 97.5 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+KiB Mem :  3794284 total,   486436 free,   691080 used,  2616768 buff/cache
+KiB Swap:        0 total,        0 free,        0 used.  2831916 avail Mem 
 
-This application shows how to use the
-[websocket](https://github.com/gorilla/websocket) package to implement a simple
-web chat application.
+  PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND             
+24363 root      20   0  252616  52060   4720 S   4.0  1.4   1019:36 iftop               
+31302 ubuntu    20   0  930664  26504   8856 S   1.7  0.7   3852:37 crossbar            
+ 5917 www-data  20   0  145712  11396   7852 S   1.3  0.3 123:49.74 nginx               
+23179 root      20   0  447328  42808  23328 S   0.7  1.1 292:00.12 containerd          
+  816 jvb       20   0 5770988 135244   8936 S   0.3  3.6   1002:19 java                
+23051 root      20   0  471992  76156  40564 S   0.3  2.0 181:01.84 dockerd             
+    1 root      20   0  225484   9556   7068 S   0.0  0.3  12:45.70 systemd
+```
 
-## Running the example
+## Getting started
 
-The example requires a working Go development environment. The [Getting
-Started](http://golang.org/doc/install) page describes how to install the
-development environment.
+Binaries will be available in the future, but for now it is straightforward to compile.
 
-Once you have Go up and running, you can download, build and run the example
-using the following commands.
+It's quick and easy to create a working ```go``` system, [following the advice here](https://golang.org/doc/install).
 
-    $ go get github.com/gorilla/websocket
-    $ cd `go list -f '{{.Dir}}' github.com/gorilla/websocket/examples/chat`
-    $ go run *.go
+Get the code, test, and install
+```
+$ go get github.com/timdrysdale/crossbar
+$ cd `go list -f '{{.Dir}}' github.com/timdrysdale/crossbar`
+$ go test ./cmd
+$ go install
+```
+To run the relay
+```
+$export CROSSBAR_LISTEN=127.0.0.1:9999
+$ crossbar
+```
 
-To use the chat example, open http://localhost:8080/ in your browser.
+Navigate to the stats page, e.g. ```http://localhost:9999/stats```
 
-## Server
+You won't see any connections, yet.
 
-The server application defines two types, `Client` and `Hub`. The server
-creates an instance of the `Client` type for each websocket connection. A
-`Client` acts as an intermediary between the websocket connection and a single
-instance of the `Hub` type. The `Hub` maintains a set of registered clients and
-broadcasts messages to the clients.
+You can connect using any of the other tools in the ```practable``` ecosystem, e.g. [timdrysdale/vw](https://github.com/vw/timdrysdale) or if you already have the useful [websocat](https://github.com/vi/websocat) installed, then
 
-The application runs one goroutine for the `Hub` and two goroutines for each
-`Client`. The goroutines communicate with each other using channels. The `Hub`
-has channels for registering clients, unregistering clients and broadcasting
-messages. A `Client` has a buffered channel of outbound messages. One of the
-client's goroutines reads messages from this channel and writes the messages to
-the websocket. The other client goroutine reads messages from the websocket and
-sends them to the hub.
-
-### Hub 
-
-The code for the `Hub` type is in
-[hub.go](https://github.com/gorilla/websocket/blob/master/examples/chat/hub.go). 
-The application's `main` function starts the hub's `run` method as a goroutine.
-Clients send requests to the hub using the `register`, `unregister` and
-`broadcast` channels.
-
-The hub registers clients by adding the client pointer as a key in the
-`clients` map. The map value is always true.
-
-The unregister code is a little more complicated. In addition to deleting the
-client pointer from the `clients` map, the hub closes the clients's `send`
-channel to signal the client that no more messages will be sent to the client.
-
-The hub handles messages by looping over the registered clients and sending the
-message to the client's `send` channel. If the client's `send` buffer is full,
-then the hub assumes that the client is dead or stuck. In this case, the hub
-unregisters the client and closes the websocket.
-
-### Client
-
-The code for the `Client` type is in [client.go](https://github.com/gorilla/websocket/blob/master/examples/chat/client.go).
-
-The `serveWs` function is registered by the application's `main` function as
-an HTTP handler. The handler upgrades the HTTP connection to the WebSocket
-protocol, creates a client, registers the client with the hub and schedules the
-client to be unregistered using a defer statement.
-
-Next, the HTTP handler starts the client's `writePump` method as a goroutine.
-This method transfers messages from the client's send channel to the websocket
-connection. The writer method exits when the channel is closed by the hub or
-there's an error writing to the websocket connection.
-
-Finally, the HTTP handler calls the client's `readPump` method. This method
-transfers inbound messages from the websocket to the hub.
-
-WebSocket connections [support one concurrent reader and one concurrent
-writer](https://godoc.org/github.com/gorilla/websocket#hdr-Concurrency). The
-application ensures that these concurrency requirements are met by executing
-all reads from the `readPump` goroutine and all writes from the `writePump`
-goroutine.
-
-To improve efficiency under high load, the `writePump` function coalesces
-pending chat messages in the `send` channel to a single WebSocket message. This
-reduces the number of system calls and the amount of data sent over the
-network.
-
-## Frontend
-
-The frontend code is in [home.html](https://github.com/gorilla/websocket/blob/master/examples/chat/home.html).
-
-On document load, the script checks for websocket functionality in the browser.
-If websocket functionality is available, then the script opens a connection to
-the server and registers a callback to handle messages from the server. The
-callback appends the message to the chat log using the appendLog function.
-
-To allow the user to manually scroll through the chat log without interruption
-from new messages, the `appendLog` function checks the scroll position before
-adding new content. If the chat log is scrolled to the bottom, then the
-function scrolls new content into view after adding the content. Otherwise, the
-scroll position is not changed.
-
-The form handler writes the user input to the websocket and clears the input
-field.
+```
+websocat --text ws://127.0.0.1:8089/expt - 
+```
+If you type some messages, you will see the contents of the row change to reflect that you have sent messages.
 
 
-[status]: https://img.shields.io/badge/alpha-do%20not%20use-orange "Alpha status, do not use"
+### Multiple clients are supported
+
+If you connect a second or even third or more times from other terminals, you will see the hub relaying your messages to all other clients.
+Try typing in each of the terminals, and see that your message makes it to each of the others.
+
+### Streams are independent
+
+Try setting up a pair of terminals that are using a different topic, and notice that messages do not pass from one topic to another.
+
+e.g. connect from two terminals using
+```
+websocat --text ws://127.0.0.1:8089/sometopic - 
+```
+
+Messages sent in a terminal connected to ```<>/sometopic``` will only go to terminals connected to the same route, and not to any other terminal.
+
+Here's a screenshot (note that ```websocat``` does a local echo so the sender can see their message; the echo is not from ```crossbar```)
+
+![alt text][topics]
+
+## Usage examples
+
+The default is bidirectional messaging, as you have seen in the example above. 
+
+### Unidirectional messaging
+
+If you only want to broadcast messages, such as a video stream, then it is nice to have some certainty that one of your clients won't inadvertently mess up the video for others by transmitting some sort of reply. To take advantage of uni-directional messaging, start the server's route with ```/in/``` and the clients' routes with ```/out/```. Note that the rest of the route has to match.
+
+You can try it out yourself.
+
+```
+websocat --text ws://127.0.0.1:8089/in/demo - 
+```
+and
+```
+websocat --text ws://127.0.0.1:8089/out/demo - 
+```
+
+You can see from the local echo that messages attempted to be sent from the clients connected to ```/out/``` are not sent to any other clients - this is enforced by the hub and does not need any special behaviour from the clients (beyond connecting to the right route). Protecting unauthorised users from connecting to the ```/in/``` route is outside the scope of the ```crossbar``` codebase, in line with conventional practice on separating concerns. 
+
+![alt text][unidirectional]
+
+## Applications
+
+### Relaying video and data
+
+Crossbar has been successfully relaying MPEG video and JSON data (on separate topics) for [penduino-ui](https://github.com/timdrysdale/penduino-ui) experiments using [ffmpeg](https://ffmpeg.org) and [timdrysdale/vw](https://github.com/timdrysdale/vw).  
+
+### Relaying shell access
+
+Shell relay is in a separate project because these have different goals, development schedules, and performance targets, even though some of the underlying code and approach is similar. See [timdrysdale/shellbar]( https://github.com/timdrysdale/shellbar).
+
+## Support / Contributions
+
+Get in touch! My efforts are going into system development at present so support for alpha-stage users is by personal arrangement/consultancy at present. If you wish to contribute, or have development resource available to do so, I'd be more than delighted to discuss with you the possibilities.
+
+[status]: https://img.shields.io/badge/alpha-working-green "Alpha status; working"
+[coverage]: https://img.shields.io/badge/coverage-54%25-orange "Test coverage 54%"
+[logo]: ./img/logo.png "Crossbar logo - hexagons connected in a network to a letter C"
+[topics]: ./img/topics.png "Multiple terminals showing bidirectional message flow"
+[unidirectional]: ./img/unidirectional.png "Multiple terminals showing unidirectional message flow"
