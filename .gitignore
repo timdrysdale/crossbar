@@ -4,13 +4,13 @@
 *.dll
 *.so
 *.dylib
-*.go~
-*.md~
+*~
 crossbar
 *.log
 *#
 # Test binary, build with `go test -c`
 *.test
+crossbar
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out

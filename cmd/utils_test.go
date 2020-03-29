@@ -1,6 +1,13 @@
 package cmd
 
-import "testing"
+import (
+	"bufio"
+	"bytes"
+	"os"
+	"testing"
+
+	log "github.com/sirupsen/logrus"
+)
 
 func clientExists(topics *topicDirectory, client clientDetails) bool {
 
@@ -39,4 +46,14 @@ func TestSlashify(t *testing.T) {
 		t.Errorf("Slashify not coping with internal slashes %s -> %s", b, slashify(b))
 	}
 
+}
+
+func suppressLog() {
+	var ignore bytes.Buffer
+	logignore := bufio.NewWriter(&ignore)
+	log.SetOutput(logignore)
+}
+
+func displayLog() {
+	log.SetOutput(os.Stdout)
 }

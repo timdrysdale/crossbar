@@ -3,10 +3,8 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"math"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -350,8 +348,6 @@ func serveStats(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http
 	go client.statsManager(closed)
 }
 
-var addr = flag.String("addr", ":8080", "http service address")
-
 func servePage(w http.ResponseWriter, r *http.Request) {
 	log.Println(r.URL)
 	if r.URL.Path != "/stats" {
@@ -365,7 +361,7 @@ func servePage(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "stats.html")
 }
 
-func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message, host *url.URL) {
+func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message, addr string) {
 	hub := newHub()
 	go hub.run()
 
@@ -377,11 +373,11 @@ func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActions
 		serveStats(closed, hub, w, r)
 	})
 
-	h := &http.Server{Addr: *addr, Handler: nil}
+	h := &http.Server{Addr: addr, Handler: nil}
 
 	go func() {
 		if err := h.ListenAndServe(); err != nil {
-			log.Fatal("ListenAndServe: ", err)
+			log.Error("ListenAndServe: ", err)
 		}
 	}()
 

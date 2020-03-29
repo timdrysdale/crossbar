@@ -9,7 +9,8 @@ import (
 )
 
 func TestAddDeleteClients(t *testing.T) {
-
+	suppressLog()
+	defer displayLog()
 	var topics topicDirectory
 	topics.directory = make(map[string][]clientDetails)
 
@@ -47,7 +48,8 @@ func TestAddDeleteClients(t *testing.T) {
 }
 
 func TestHandler(t *testing.T) {
-
+	suppressLog()
+	defer displayLog()
 	//This test fails if you don't give the handler a chance to action the commands, hence the time.Sleep
 	var wg sync.WaitGroup
 	closed := make(chan struct{})
