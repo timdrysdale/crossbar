@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -196,37 +197,22 @@ func (c *Client) statsManager(closed <-chan struct{}) {
 // reads from this goroutine.
 func (c *Client) readPump(broadcaster bool) {
 
-	stop := make(chan struct{})    // defer'd func closes, so that expiry goro is cleaned when there is some other reason for closure
-	expired := make(chan struct{}) //expiry goro closes this if token expires, so that websocket connection can be closed
-
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close()
-		close(stop)
 	}()
 
 	c.conn.SetReadLimit(maxMessageSize)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 
-	//secret := viper.GetString("secret")
-	//audience := viper.GetString("audience")
-
-	fmt.Println("Hello there")
-
 	// skip authentication if there is no secret
-	if secret == "" {
+	if c.secret == "" {
 		log.Warn("JWT authentication of outgoing data is disabled")
 		c.authorised = true
 	}
 
 	for {
-		// Close the connection if the (previously valid) token expires
-		select {
-		case <-expired:
-			break
-		default:
-		}
 
 		mt, data, err := c.conn.ReadMessage()
 		if err != nil {
@@ -253,77 +239,89 @@ func (c *Client) readPump(broadcaster bool) {
 			// check if the message is a JWT with authentication
 			// https://github.com/dgrijalva/jwt-go/issues/397: Make sure you're not clicking "secret base64 encoded" if you enter "mysecret" as the secret.
 
-			token, err := jwt.Parse(strings.TrimSpace(string(data)), func(token *jwt.Token) (interface{}, error) {
-				// verify alg is expected
-				if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-					return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
-				}
-				// global config option
-				return []byte(c.secret), nil
-			})
+			route := c.audience + c.topic
 
-			if err != nil {
+			now := time.Now().Unix()
 
-				log.WithFields(log.Fields{"error": err}).Warn("Error reading token")
+			fmt.Printf("route: %s; secret: %s\n", route, c.secret)
 
-			} else {
+			lifetime, err := checkAuth(data, c.secret, route, now)
 
-				var lifetime int64 = 0
+			if err == nil {
 
-				fmt.Printf("Authorised for %s", c.topic)
-				fmt.Println(token.Valid)
-				fmt.Println(token.Claims)
-
-				if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-
-					completeAudience := c.audience + c.topic
-
-					if claims["aud"] == completeAudience {
-						c.authorised = true
-						log.WithFields(log.Fields{"routing": completeAudience}).Info("Authorised - client can receive data")
-					} else {
-						log.WithFields(log.Fields{"wanted": claims["aud"], "actual": completeAudience}).Warn("Denied - not permitted to access this host/routing")
-					}
-
-					if val, ok := claims["exp"]; ok {
-
-						if exp, ok := val.(float64); ok {
-							lifetime = int64(exp) - time.Now().Unix()
-							log.WithFields(log.Fields{"lifetime": lifetime, "exp": claims["exp"]}).Info("Lifetime")
-						} else {
-							log.WithFields(log.Fields{"exp": claims["exp"]}).Info("Couldn't calculate lifetime")
-						}
-
-						//expiry, err := strconv.ParseInt(exp.(string), 10, 64)
-
-						//						if err == nil {
-						//	lifetime = time.Now().Unix() - expiry
-						//	log.WithFields(log.Fields{"exp": claims["exp"]}).Info("Lifetime")
-						//} else {
-
-						//	log.WithFields(log.Fields{"exp": claims["exp"]}).Info("Couldn't calculate lifetime")
-
-						//}
-					}
-
-				} else {
-					log.WithFields(log.Fields{"err": err}).Error("Error checking claims in JWT")
-				}
+				c.authorised = true
 
 				go func() {
-					select {
-					case <-time.After(time.Duration(lifetime) * time.Second):
-						//close(expired)
-						log.WithFields(log.Fields{"data": data, "sender": c, "topic": c.topic}).Warn("Token has expired")
-					case <-stop:
-					}
+					time.Sleep(time.Duration(lifetime) * time.Second)
+					c.authorised = false
+					log.WithFields(log.Fields{"topic": c.topic}).Warn("Token has expired")
 				}()
+
 			}
 
-			log.WithFields(log.Fields{"data": data, "sender": c, "topic": c.topic, "mt": mt}).Warn("Incoming message from non-broadcaster")
+		}
+	}
+
+}
+
+// checkAuth checks the claims are ok
+//
+// the route must match the audience
+// the lifetime is the number of seconds for which the token is valid
+
+func checkAuth(data []byte, secret string, route string, now int64) (int64, error) {
+
+	tokenError := errors.New("Token invalid for this resource")
+	var lifetime int64 = 0
+
+	token, err := jwt.Parse(strings.TrimSpace(string(data)), func(token *jwt.Token) (interface{}, error) {
+		// verify alg is expected
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
+		}
+		// global config option
+		return []byte(secret), nil
+	})
+
+	if err != nil {
+		msg := fmt.Sprintf("Error reading token %s", err.Error())
+		log.WithFields(log.Fields{"error": err}).Warn(msg)
+		tokenError = errors.New(msg)
+
+	} else {
+
+		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+
+			if claims["aud"] == route {
+				tokenError = nil
+				log.WithFields(log.Fields{"route": route}).Info("Authorised - client can receive data")
+			} else {
+				msg := fmt.Sprintf("Denied - not permitted to access %s with token for %s", route, claims["aud"])
+				log.WithFields(log.Fields{"wanted": claims["aud"], "actual": route}).Warn(msg)
+				tokenError = errors.New(msg)
+			}
+
+			if val, ok := claims["exp"]; ok {
+
+				if exp, ok := val.(float64); ok {
+					lifetime = int64(exp) - time.Now().Unix()
+					log.WithFields(log.Fields{"lifetime": lifetime, "exp": claims["exp"]}).Info("Lifetime")
+				} else {
+					msg := "Couldn't calculate lifetime, leaving as zero lifetime connection"
+					log.WithFields(log.Fields{"exp": claims["exp"]}).Info(msg)
+					tokenError = errors.New(msg)
+				}
+			}
+
+		} else {
+			msg := "Error checking claims in JWT"
+			log.WithFields(log.Fields{"err": err}).Error(msg)
+			tokenError = errors.New(msg)
 		}
 
 	}
+
+	return lifetime, tokenError
 }
 
 // writePump pumps messages from the hub to the websocket connection.
@@ -446,7 +444,10 @@ func serveStats(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http
 		return
 	}
 
-	client := &Client{hub: hub, conn: conn, send: make(chan message, 256)}
+	client := &Client{hub: hub,
+		conn: conn,
+		send: make(chan message, 256),
+	}
 	go client.statsReporter()
 	go client.statsManager(closed)
 }
