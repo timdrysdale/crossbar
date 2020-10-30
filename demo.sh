@@ -1,2 +1,4 @@
 #!/bin/bash
-./crossbar --listen ws://localhost:8097 --buffer 65535
+export CROSSBAR_LISTEN=127.0.0.1:8087
+export CROSSBAR_DEVELOPMENT=TRUE  
+./crossbar

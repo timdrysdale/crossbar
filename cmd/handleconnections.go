@@ -3,15 +3,18 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/eclesh/welford"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/spf13/viper"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -192,14 +195,39 @@ func (c *Client) statsManager(closed <-chan struct{}) {
 // ensures that there is at most one reader on a connection by executing all
 // reads from this goroutine.
 func (c *Client) readPump(broadcaster bool) {
+
+	stop := make(chan struct{})    // defer'd func closes, so that expiry goro is cleaned when there is some other reason for closure
+	expired := make(chan struct{}) //expiry goro closes this if token expires, so that websocket connection can be closed
+
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close()
+		close(stop)
 	}()
+
 	c.conn.SetReadLimit(maxMessageSize)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+
+	secret := viper.GetString("secret")
+	audience := viper.GetString("audience")
+
+	fmt.Println("Hello there")
+
+	// skip authentication if there is no secret
+	if secret == "" {
+		log.Warn("JWT authentication of outgoing data is disabled")
+		c.authorised = true
+	}
+
 	for {
+		// Close the connection if the (previously valid) token expires
+		select {
+		case <-expired:
+			break
+		default:
+		}
+
 		mt, data, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
@@ -222,6 +250,76 @@ func (c *Client) readPump(broadcaster bool) {
 			c.stats.tx.size.Add(float64(len(data)))
 
 		} else {
+			// check if the message is a JWT with authentication
+			// https://github.com/dgrijalva/jwt-go/issues/397: Make sure you're not clicking "secret base64 encoded" if you enter "mysecret" as the secret.
+
+			token, err := jwt.Parse(strings.TrimSpace(string(data)), func(token *jwt.Token) (interface{}, error) {
+				// verify alg is expected
+				if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+					return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
+				}
+				// global config option
+				return []byte(secret), nil
+			})
+
+			if err != nil {
+
+				log.WithFields(log.Fields{"error": err}).Warn("Error reading token")
+
+			} else {
+
+				var lifetime int64 = 0
+
+				fmt.Printf("Authorised for %s", c.topic)
+				fmt.Println(token.Valid)
+				fmt.Println(token.Claims)
+
+				if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+
+					completeAudience := audience + c.topic
+
+					if claims["aud"] == completeAudience {
+						c.authorised = true
+						log.WithFields(log.Fields{"routing": completeAudience}).Info("Authorised - client can receive data")
+					} else {
+						log.WithFields(log.Fields{"wanted": claims["aud"], "actual": completeAudience}).Warn("Denied - not permitted to access this host/routing")
+					}
+
+					if val, ok := claims["exp"]; ok {
+
+						if exp, ok := val.(float64); ok {
+							lifetime = int64(exp) - time.Now().Unix()
+							log.WithFields(log.Fields{"lifetime": lifetime, "exp": claims["exp"]}).Info("Lifetime")
+						} else {
+							log.WithFields(log.Fields{"exp": claims["exp"]}).Info("Couldn't calculate lifetime")
+						}
+
+						//expiry, err := strconv.ParseInt(exp.(string), 10, 64)
+
+						//						if err == nil {
+						//	lifetime = time.Now().Unix() - expiry
+						//	log.WithFields(log.Fields{"exp": claims["exp"]}).Info("Lifetime")
+						//} else {
+
+						//	log.WithFields(log.Fields{"exp": claims["exp"]}).Info("Couldn't calculate lifetime")
+
+						//}
+					}
+
+				} else {
+					log.WithFields(log.Fields{"err": err}).Error("Error checking claims in JWT")
+				}
+
+				go func() {
+					select {
+					case <-time.After(time.Duration(lifetime) * time.Second):
+						//close(expired)
+						log.WithFields(log.Fields{"data": data, "sender": c, "topic": c.topic}).Warn("Token has expired")
+					case <-stop:
+					}
+				}()
+			}
+
 			log.WithFields(log.Fields{"data": data, "sender": c, "topic": c.topic, "mt": mt}).Warn("Incoming message from non-broadcaster")
 		}
 
@@ -249,34 +347,37 @@ func (c *Client) writePump(closed <-chan struct{}) {
 				return
 			}
 
-			w, err := c.conn.NextWriter(message.mt)
-			if err != nil {
-				return
-			}
+			if c.authorised { //only send if authorised
 
-			w.Write(message.data)
+				w, err := c.conn.NextWriter(message.mt)
+				if err != nil {
+					return
+				}
 
-			size := len(message.data)
+				w.Write(message.data)
 
-			// Add queued chunks to the current websocket message, without delimiter.
-			n := len(c.send)
-			for i := 0; i < n; i++ {
-				followOnMessage := <-c.send
-				w.Write(followOnMessage.data)
-				size += len(followOnMessage.data)
-			}
+				size := len(message.data)
 
-			t := time.Now()
-			if c.stats.rx.ns.Count() > 0 {
-				c.stats.rx.ns.Add(float64(t.UnixNano() - c.stats.rx.last.UnixNano()))
-			} else {
-				c.stats.rx.ns.Add(float64(t.UnixNano() - c.stats.connectedAt.UnixNano()))
-			}
-			c.stats.rx.last = t
-			c.stats.rx.size.Add(float64(size))
+				// Add queued chunks to the current websocket message, without delimiter.
+				n := len(c.send)
+				for i := 0; i < n; i++ {
+					followOnMessage := <-c.send
+					w.Write(followOnMessage.data)
+					size += len(followOnMessage.data)
+				}
 
-			if err := w.Close(); err != nil {
-				return
+				t := time.Now()
+				if c.stats.rx.ns.Count() > 0 {
+					c.stats.rx.ns.Add(float64(t.UnixNano() - c.stats.rx.last.UnixNano()))
+				} else {
+					c.stats.rx.ns.Add(float64(t.UnixNano() - c.stats.connectedAt.UnixNano()))
+				}
+				c.stats.rx.last = t
+				c.stats.rx.size.Add(float64(size))
+
+				if err := w.Close(); err != nil {
+					return
+				}
 			}
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))

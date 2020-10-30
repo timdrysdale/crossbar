@@ -32,11 +32,8 @@ import (
 )
 
 var bufferSize int64
-var cfgFile string
-var cpuprofile string
 var host *url.URL
-var listen string
-var logFile string
+var audience, cfgFile, cpuprofile, listen, logFile, secret string
 var development bool
 
 /* configuration
@@ -133,6 +130,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&logFile, "log", "", "log file (default is STDOUT)")
 	rootCmd.PersistentFlags().StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile to file")
 	rootCmd.PersistentFlags().BoolVar(&development, "dev", false, "development environment")
+	rootCmd.PersistentFlags().StringVar(&secret, "secret", "", "set a secret to enable jwt authentication")
+	rootCmd.PersistentFlags().StringVar(&audience, "https://localhost", "", "set the root FQDN we use to check the jwt audience (n.b. aud must contain the routing too)")
 }
 
 // initConfig - no config file; use ENV variables where available e.g. export CROSSBAR_LISTEN=127.0.0.1:8081

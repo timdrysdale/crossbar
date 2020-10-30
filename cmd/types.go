@@ -24,6 +24,9 @@ type Client struct {
 	// is client allowed to provide input to the crossbar?
 	broadcaster bool
 
+	//is client allowed to receive data?
+	authorised bool
+
 	stats *Stats
 
 	name string
