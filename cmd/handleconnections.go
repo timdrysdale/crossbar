@@ -209,8 +209,8 @@ func (c *Client) readPump(broadcaster bool) {
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 
-	secret := viper.GetString("secret")
-	audience := viper.GetString("audience")
+	//secret := viper.GetString("secret")
+	//audience := viper.GetString("audience")
 
 	fmt.Println("Hello there")
 
@@ -259,7 +259,7 @@ func (c *Client) readPump(broadcaster bool) {
 					return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
 				}
 				// global config option
-				return []byte(secret), nil
+				return []byte(c.secret), nil
 			})
 
 			if err != nil {
@@ -276,7 +276,7 @@ func (c *Client) readPump(broadcaster bool) {
 
 				if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
 
-					completeAudience := audience + c.topic
+					completeAudience := c.audience + c.topic
 
 					if claims["aud"] == completeAudience {
 						c.authorised = true
@@ -428,6 +428,8 @@ func serveWs(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Re
 		name:        uuid.New().String(),
 		userAgent:   r.UserAgent(),
 		remoteAddr:  r.Header.Get("X-Forwarded-For"),
+		secret:      viper.GetString("secret"),
+		audience:    viper.GetString("audience"),
 	}
 	client.hub.register <- client
 
