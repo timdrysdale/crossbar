@@ -197,9 +197,12 @@ func (c *Client) statsManager(closed <-chan struct{}) {
 // reads from this goroutine.
 func (c *Client) readPump(broadcaster bool) {
 
+	quit := make(chan struct{})
+
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close()
+		close(quit)
 	}()
 
 	c.conn.SetReadLimit(maxMessageSize)
@@ -208,7 +211,7 @@ func (c *Client) readPump(broadcaster bool) {
 
 	// skip authentication if there is no secret
 	if c.secret == "" {
-		log.Warn("JWT authentication of outgoing data is disabled")
+		log.WithField("topic", c.topic).Warn("No secret supplied so authorisation is permitted for all connections")
 		c.authorised = true
 	}
 
@@ -222,20 +225,13 @@ func (c *Client) readPump(broadcaster bool) {
 			break
 		}
 
-		if broadcaster {
+		if !c.authorised {
 
-			c.hub.broadcast <- message{sender: *c, data: data, mt: mt}
+			// this if statement deliberately does not allow authorisation to be extended by additional auth messages sent later
+			// Since we only receive one authorisation message per connection, for a spam connection it will either
+			// a/ stay connected until auth attempted, receiving nothing, and using little resource
+			// b/ attempt auth, fail, get disconnected, and need to reconnect - in which case we look to proxy for rate-limiting the reconnections
 
-			t := time.Now()
-			if c.stats.tx.ns.Count() > 0 {
-				c.stats.tx.ns.Add(float64(t.UnixNano() - c.stats.tx.last.UnixNano()))
-			} else {
-				c.stats.tx.ns.Add(float64(t.UnixNano() - c.stats.connectedAt.UnixNano()))
-			}
-			c.stats.tx.last = t
-			c.stats.tx.size.Add(float64(len(data)))
-
-		} else {
 			// check if the message is a JWT with authentication
 			// https://github.com/dgrijalva/jwt-go/issues/397: Make sure you're not clicking "secret base64 encoded" if you enter "mysecret" as the secret.
 
@@ -252,12 +248,66 @@ func (c *Client) readPump(broadcaster bool) {
 				c.authorised = true
 
 				go func() {
-					time.Sleep(time.Duration(lifetime) * time.Second)
-					c.authorised = false
-					log.WithFields(log.Fields{"topic": c.topic}).Warn("Token has expired")
+
+					for {
+						select {
+						case <-quit:
+							log.WithFields(log.Fields{"topic": c.topic}).Debug("Timeout has been cancelled by quit channel")
+							return
+						default:
+							<-time.After(time.Duration(lifetime) * time.Second)
+							c.authorised = false
+							log.WithFields(log.Fields{"topic": c.topic}).Warn("Token has expired")
+						}
+					}
 				}()
 
+				accepted := &AuthMessage{
+					Topic:      c.topic,
+					Token:      string(data),
+					Authorised: true,
+					Reason:     err.Error(),
+				}
+
+				reply, err := json.Marshal(accepted)
+
+				if err == nil {
+					c.hub.broadcast <- message{sender: *c, data: reply, mt: websocket.TextMessage}
+				} else {
+					log.WithField("error", err.Error()).Warn("Could not marshal authorisation-accepted message")
+				}
+
+			} else {
+
 			}
+			denied := &AuthMessage{
+				Topic:      c.topic,
+				Token:      string(data),
+				Authorised: false,
+				Reason:     err.Error(),
+			}
+
+			reply, err := json.Marshal(denied)
+
+			if err == nil {
+				c.hub.broadcast <- message{sender: *c, data: reply, mt: websocket.TextMessage}
+			} else {
+				log.WithField("error", err.Error()).Warn("Could not marshal authorisation-denied message")
+			}
+			return // close connection if auth is incorrect. Will this mess up
+
+		} else if broadcaster { // do in this order to save broadcasting the auth message! (TODO - add test for this)
+
+			c.hub.broadcast <- message{sender: *c, data: data, mt: mt}
+
+			t := time.Now()
+			if c.stats.tx.ns.Count() > 0 {
+				c.stats.tx.ns.Add(float64(t.UnixNano() - c.stats.tx.last.UnixNano()))
+			} else {
+				c.stats.tx.ns.Add(float64(t.UnixNano() - c.stats.connectedAt.UnixNano()))
+			}
+			c.stats.tx.last = t
+			c.stats.tx.size.Add(float64(len(data)))
 
 		}
 	}
@@ -357,6 +407,9 @@ func (c *Client) writePump(closed <-chan struct{}) {
 				size := len(message.data)
 
 				// Add queued chunks to the current websocket message, without delimiter.
+				// TODO check what impact, if any, this has on jsmpeg memory requirements
+				// when crossbar is loaded enough to cause message queuing
+				// TODO benchmark effect of loading on message queuing
 				n := len(c.send)
 				for i := 0; i < n; i++ {
 					followOnMessage := <-c.send

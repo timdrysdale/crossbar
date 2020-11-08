@@ -8,6 +8,14 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Auth message to send on successful connection or not ...
+type AuthMessage struct {
+	Topic      string `json:"topic"`
+	Token      string `json:"token"`
+	Authorised bool   `json:"authorised"`
+	Reason     string `json:"reason"`
+}
+
 // Client is a middleperson between the websocket connection and the hub.
 type Client struct {
 	hub *Hub
