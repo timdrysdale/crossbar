@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -132,7 +133,7 @@ func TestTooEarlyForAuth(t *testing.T) {
 		Topic:      serverEndPoint,
 		Token:      earlyToken,
 		Authorised: false,
-		Reason:     "denied",
+		Reason:     "Error reading token Token is not valid yet",
 	})
 
 	_ = expectOneSlice(s.In, expectedServerReply, timeout, t)
@@ -209,7 +210,7 @@ func TestTooLateForAuth(t *testing.T) {
 		Topic:      serverEndPoint,
 		Token:      lateToken,
 		Authorised: false,
-		Reason:     "denied",
+		Reason:     "Error reading token Token is expired",
 	})
 
 	_ = expectOneSlice(s.In, expectedServerReply, timeout, t)
@@ -307,7 +308,7 @@ func TestBadServerAuth(t *testing.T) {
 		Topic:      serverEndPoint,
 		Token:      badstoken,
 		Authorised: false,
-		Reason:     "denied",
+		Reason:     fmt.Sprintf("Denied - not permitted to access %s with token for %s", us, uc),
 	})
 
 	_ = expectOneSlice(s.In, expectedServerReply, timeout, t)
@@ -337,7 +338,7 @@ func TestBadServerAuth(t *testing.T) {
 		Topic:      serverEndPoint,
 		Token:      string(broadcast0),
 		Authorised: false,
-		Reason:     "denied",
+		Reason:     "Error reading token token contains an invalid number of segments",
 	})
 
 	_ = expectOneSlice(s.In, expectedServerReply, timeout, t)
@@ -395,11 +396,12 @@ func TestBadClientAuth(t *testing.T) {
 	serverEndPoint := "/in/some/location"
 	uc := route + clientEndPoint
 	us := route + serverEndPoint
+	ubad := route + "/bad/routing"
 
 	var lifetime int64 = 999999
 	ctoken, err := MakeTestToken(uc, lifetime, secret)
 
-	badctoken, err := MakeTestToken(route+"/bad/routing", lifetime, secret)
+	badctoken, err := MakeTestToken(ubad, lifetime, secret)
 
 	assert.NoError(t, err)
 	stoken, err := MakeTestToken(us, lifetime, secret)
@@ -440,7 +442,7 @@ func TestBadClientAuth(t *testing.T) {
 		Topic:      clientEndPoint,
 		Token:      badctoken,
 		Authorised: false,
-		Reason:     "denied",
+		Reason:     fmt.Sprintf("Denied - not permitted to access %s with token for %s", uc, ubad),
 	})
 
 	assert.NoError(t, err)

@@ -303,7 +303,7 @@ func (c *Client) readPump(broadcaster bool) {
 					Topic:      topic,
 					Token:      string(data),
 					Authorised: false,
-					Reason:     "denied",
+					Reason:     err.Error(), //"denied",
 				}
 
 				reply, err := json.Marshal(denied)
