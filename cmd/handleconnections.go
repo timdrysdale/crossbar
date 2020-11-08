@@ -198,9 +198,14 @@ func (c *Client) readPump(broadcaster bool) {
 
 	quit := make(chan struct{})
 
+	// use wg to reinforce that we must kill the timer goroutine (to avoid memory leaks)
+	// TODO: figure out how to test this behaviour explicitly, so it is not lost in future updates
+	var wg sync.WaitGroup
+
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close()
+		log.Debug("Deferred close of readPump")
 		close(quit)
 	}()
 
@@ -234,11 +239,17 @@ func (c *Client) readPump(broadcaster bool) {
 			// check if the message is a JWT with authentication
 			// https://github.com/dgrijalva/jwt-go/issues/397: Make sure you're not clicking "secret base64 encoded" if you enter "mysecret" as the secret.
 
-			route := c.audience + c.topic
+			// We convert all broadcasters connecting on /in/<route> to the topic of /out/<route>
+			// so we need to adjust our topic back to /in/<route> before we can check the token
+			topic := c.topic
+
+			if c.broadcaster {
+				topic = strings.Replace(topic, "/out/", "/in/", 1)
+			}
+
+			route := c.audience + topic
 
 			now := time.Now().Unix()
-
-			fmt.Printf("route: %s; secret: %s\n", route, c.secret)
 
 			lifetime, err := checkAuth(data, c.secret, route, now)
 
@@ -246,62 +257,66 @@ func (c *Client) readPump(broadcaster bool) {
 
 				c.authorised = true
 
+				wg.Add(1)
+
 				go func() {
 
-					for {
-						select {
-						case <-quit:
-							log.WithFields(log.Fields{"topic": c.topic}).Debug("Timeout has been cancelled by quit channel")
-							return
-						default:
-							<-time.After(time.Duration(lifetime) * time.Second)
-							c.authorised = false
+					defer wg.Done()
 
-							// don't send expired message to avoid jsmpeg having to check each incoming message
-							// for whether it is MPEG TS or json
-							// propose using separate service to send "information on token status"
-							// i.e. subscribe to the token alerts service with your tokens ...
-							// (which need not necessarily check the signature?)
+					select {
+					case <-quit:
+						log.WithFields(log.Fields{"topic": c.topic}).Debug("Timeout has been cancelled by quit channel")
+						return
+					case <-time.After(time.Duration(lifetime) * time.Second):
 
-							log.WithFields(log.Fields{"topic": c.topic}).Warn("Token has expired")
-						}
+						c.authorised = false
+
+						// don't send expired message to avoid jsmpeg having to check each incoming message
+						// for whether it is MPEG TS or json
+						// propose using separate service to send "information on token status"
+						// i.e. subscribe to the token alerts service with your tokens ...
+						// (which need not necessarily check the signature?)
+
+						log.WithFields(log.Fields{"topic": c.topic}).Warn("Token has expired")
 					}
+
 				}()
 
 				accepted := &AuthMessage{
-					Topic:      c.topic,
+					Topic:      topic,
 					Token:      string(data),
 					Authorised: true,
-					Reason:     err.Error(),
+					Reason:     "ok",
 				}
 
 				reply, err := json.Marshal(accepted)
 
 				if err == nil {
-					c.hub.broadcast <- message{sender: *c, data: reply, mt: websocket.TextMessage}
+					c.send <- message{sender: *c, data: reply, mt: websocket.TextMessage}
 				} else {
 					log.WithField("error", err.Error()).Warn("Could not marshal authorisation-accepted message")
 				}
 
 			} else {
 
-			}
-			denied := &AuthMessage{
-				Topic:      c.topic,
-				Token:      string(data),
-				Authorised: false,
-				Reason:     err.Error(),
-			}
+				denied := &AuthMessage{
+					Topic:      topic,
+					Token:      string(data),
+					Authorised: false,
+					Reason:     "denied",
+				}
 
-			reply, err := json.Marshal(denied)
+				reply, err := json.Marshal(denied)
 
-			if err == nil {
-				c.hub.broadcast <- message{sender: *c, data: reply, mt: websocket.TextMessage}
-			} else {
-				log.WithField("error", err.Error()).Warn("Could not marshal authorisation-denied message")
+				if err == nil {
+					c.send <- message{sender: *c, data: reply, mt: websocket.TextMessage}
+				} else {
+					log.WithField("error", err.Error()).Warn("Could not marshal authorisation-denied message")
+				}
+				log.WithField("topic", c.topic).Warn("Auth incorrect, closing connection")
+				return // close connection if auth is incorrect. Will this mess up
+
 			}
-			return // close connection if auth is incorrect. Will this mess up
-
 		} else if broadcaster { // do in this order to save broadcasting the auth message! (TODO - add test for this)
 
 			c.hub.broadcast <- message{sender: *c, data: data, mt: mt}
@@ -318,6 +333,7 @@ func (c *Client) readPump(broadcaster bool) {
 		}
 	}
 
+	wg.Wait()
 }
 
 // checkAuth checks the claims are ok
@@ -350,7 +366,7 @@ func checkAuth(data []byte, secret string, route string, now int64) (int64, erro
 
 			if claims["aud"] == route {
 				tokenError = nil
-				log.WithFields(log.Fields{"route": route}).Info("Authorised - client can receive data")
+				log.WithFields(log.Fields{"route": route}).Info("Authorised - client can communicate")
 			} else {
 				msg := fmt.Sprintf("Denied - not permitted to access %s with token for %s", route, claims["aud"])
 				log.WithFields(log.Fields{"wanted": claims["aud"], "actual": route}).Warn(msg)

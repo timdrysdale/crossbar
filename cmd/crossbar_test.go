@@ -3,20 +3,42 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/websocket"
 	"github.com/phayes/freeport"
 	log "github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 	"github.com/timdrysdale/reconws"
 )
 
-func TestAuth(t *testing.T) {
+func MakeTestToken(audience string, lifetime int64, secret string) (string, error) {
 
+	now := time.Now().Unix()
+	later := now + lifetime
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"aud": audience,
+		"iat": now,
+		"nbf": now,
+		"exp": later,
+	})
+
+	// Sign and get the complete encoded token as a string using the secret
+	tokenString, err := token.SignedString([]byte(secret))
+
+	return tokenString, err
+
+}
+
+func TestAuth(t *testing.T) {
+	//log.SetLevel(log.TraceLevel)
 	suppressLog()
 	defer displayLog()
 
@@ -34,9 +56,12 @@ func TestAuth(t *testing.T) {
 	}
 
 	addr := ":" + strconv.Itoa(port)
-
+	route := "ws://127.0.0.1" + addr
+	secret := "asldjflkasjdflkj13094809asdfhkj13"
 	config := Config{
-		Addr: addr,
+		Addr:     addr,
+		Audience: route,
+		Secret:   secret,
 	}
 
 	wg.Add(1)
@@ -49,8 +74,18 @@ func TestAuth(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	uc := "ws://127.0.0.1" + addr + "/out/some/location"
-	us := "ws://127.0.0.1" + addr + "/in/some/location"
+	clientEndPoint := "/out/some/location"
+	serverEndPoint := "/in/some/location"
+	uc := route + clientEndPoint
+	us := route + serverEndPoint
+
+	var lifetime int64 = 999999
+	ctoken, err := MakeTestToken(uc, lifetime, secret)
+
+	assert.NoError(t, err)
+	stoken, err := MakeTestToken(us, lifetime, secret)
+
+	assert.NoError(t, err)
 
 	c0 := reconws.New()
 	c1 := reconws.New()
@@ -59,15 +94,42 @@ func TestAuth(t *testing.T) {
 	go c0.Reconnect(ctx, uc)
 	go c1.Reconnect(ctx, uc)
 	go s.Reconnect(ctx, us)
+	fmt.Printf("server connection at %s\n", us)
 
 	timeout := 50 * time.Millisecond
 
 	time.Sleep(timeout)
 
+	// do authorisation
+	mtype := websocket.TextMessage
+
+	c0.Out <- reconws.WsMessage{Data: []byte(ctoken), Type: mtype}
+	c1.Out <- reconws.WsMessage{Data: []byte(ctoken), Type: mtype}
+	s.Out <- reconws.WsMessage{Data: []byte(stoken), Type: mtype}
+
+	expectedClientReply, err := json.Marshal(AuthMessage{
+		Topic:      clientEndPoint,
+		Token:      ctoken,
+		Authorised: true,
+		Reason:     "ok",
+	})
+
+	assert.NoError(t, err)
+
+	_ = expectOneSlice(c0.In, expectedClientReply, timeout, t)
+	_ = expectOneSlice(c1.In, expectedClientReply, timeout, t)
+
+	expectedServerReply, err := json.Marshal(AuthMessage{
+		Topic:      serverEndPoint,
+		Token:      stoken,
+		Authorised: true,
+		Reason:     "ok",
+	})
+
+	_ = expectOneSlice(s.In, expectedServerReply, timeout, t)
+
 	payload0 := []byte("Hello from client0")
 	payload1 := []byte("Hello from client1")
-
-	mtype := websocket.TextMessage
 
 	c0.Out <- reconws.WsMessage{Data: payload0, Type: mtype}
 	c1.Out <- reconws.WsMessage{Data: payload1, Type: mtype}
@@ -317,13 +379,16 @@ func expectOneSlice(channel chan reconws.WsMessage, expected []byte, timeout tim
 	case <-time.After(timeout):
 		t.Errorf("timeout receiving message (expected %s)", expected)
 	case msg, ok := <-channel:
-		if ok {
+		if ok && len(expected) > 0 {
 			receivedSlice = msg.Data
 			if bytes.Compare(receivedSlice, expected) != 0 {
 				t.Errorf("Messages don't match: Want: %s\nGot : %s\n", expected, receivedSlice)
 			}
-		} else {
+		} else if !ok {
 			t.Error("Channel problem")
+		} else { //for the case we didn't know in advance the reply type ....
+			// use this only for debugging tests
+			receivedSlice = msg.Data
 		}
 	}
 	return receivedSlice
