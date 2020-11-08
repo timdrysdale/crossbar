@@ -36,6 +36,324 @@ func MakeTestToken(audience string, lifetime int64, secret string) (string, erro
 
 }
 
+func MakeExpiredTestToken(audience string, secret string) (string, error) {
+
+	now := time.Now().Unix()
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"aud": audience,
+		"iat": now - 200,
+		"nbf": now - 100,
+		"exp": now - 5,
+	})
+
+	// Sign and get the complete encoded token as a string using the secret
+	tokenString, err := token.SignedString([]byte(secret))
+
+	return tokenString, err
+
+}
+
+func MakeTooEarlyTestToken(audience string, secret string) (string, error) {
+
+	now := time.Now().Unix()
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"aud": audience,
+		"iat": now,
+		"nbf": now + 100,
+		"exp": now + 200,
+	})
+
+	// Sign and get the complete encoded token as a string using the secret
+	tokenString, err := token.SignedString([]byte(secret))
+
+	return tokenString, err
+
+}
+
+func TestTooEarlyForAuth(t *testing.T) {
+	//log.SetLevel(log.TraceLevel)
+	suppressLog()
+	defer displayLog()
+
+	//Todo - add support for httptest https://stackoverflow.com/questions/40786526/resetting-http-handlers-in-golang-for-unit-testing
+	http.DefaultServeMux = new(http.ServeMux)
+
+	// setup crossbar on local (free) port
+
+	closed := make(chan struct{})
+	var wg sync.WaitGroup
+
+	port, err := freeport.GetFreePort()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	addr := ":" + strconv.Itoa(port)
+	route := "ws://127.0.0.1" + addr
+	secret := "asldjflkasjdflkj13094809asdfhkj13"
+	config := Config{
+		Addr:     addr,
+		Audience: route,
+		Secret:   secret,
+	}
+
+	wg.Add(1)
+
+	go crossbar(config, closed, &wg)
+
+	time.Sleep(10 * time.Millisecond)
+
+	// set up test server and two clients
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	serverEndPoint := "/in/some/location"
+	us := route + serverEndPoint
+
+	earlyToken, err := MakeTooEarlyTestToken(us, secret)
+	assert.NoError(t, err)
+
+	s := reconws.New()
+
+	go s.Reconnect(ctx, us)
+
+	timeout := 100 * time.Millisecond
+
+	time.Sleep(timeout)
+
+	// do authorisation
+	mtype := websocket.TextMessage
+
+	s.Out <- reconws.WsMessage{Data: []byte(earlyToken), Type: mtype}
+
+	expectedServerReply, err := json.Marshal(AuthMessage{
+		Topic:      serverEndPoint,
+		Token:      earlyToken,
+		Authorised: false,
+		Reason:     "denied",
+	})
+
+	_ = expectOneSlice(s.In, expectedServerReply, timeout, t)
+
+	time.Sleep(timeout)
+
+	cancel()
+
+	time.Sleep(timeout)
+
+	close(closed)
+
+	wg.Wait()
+
+}
+
+func TestTooLateForAuth(t *testing.T) {
+	//log.SetLevel(log.TraceLevel)
+	suppressLog()
+	defer displayLog()
+
+	//Todo - add support for httptest https://stackoverflow.com/questions/40786526/resetting-http-handlers-in-golang-for-unit-testing
+	http.DefaultServeMux = new(http.ServeMux)
+
+	// setup crossbar on local (free) port
+
+	closed := make(chan struct{})
+	var wg sync.WaitGroup
+
+	port, err := freeport.GetFreePort()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	addr := ":" + strconv.Itoa(port)
+	route := "ws://127.0.0.1" + addr
+	secret := "asldjflkasjdflkj13094809asdfhkj13"
+	config := Config{
+		Addr:     addr,
+		Audience: route,
+		Secret:   secret,
+	}
+
+	wg.Add(1)
+
+	go crossbar(config, closed, &wg)
+
+	time.Sleep(10 * time.Millisecond)
+
+	// set up test server and two clients
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	serverEndPoint := "/in/some/location"
+	us := route + serverEndPoint
+
+	lateToken, err := MakeExpiredTestToken(us, secret)
+	assert.NoError(t, err)
+
+	s := reconws.New()
+
+	go s.Reconnect(ctx, us)
+
+	timeout := 100 * time.Millisecond
+
+	time.Sleep(timeout)
+
+	// do authorisation
+	mtype := websocket.TextMessage
+
+	s.Out <- reconws.WsMessage{Data: []byte(lateToken), Type: mtype}
+
+	expectedServerReply, err := json.Marshal(AuthMessage{
+		Topic:      serverEndPoint,
+		Token:      lateToken,
+		Authorised: false,
+		Reason:     "denied",
+	})
+
+	_ = expectOneSlice(s.In, expectedServerReply, timeout, t)
+
+	time.Sleep(timeout)
+
+	cancel()
+
+	time.Sleep(timeout)
+
+	close(closed)
+
+	wg.Wait()
+
+}
+
+func TestBadServerAuth(t *testing.T) {
+	//log.SetLevel(log.TraceLevel)
+	suppressLog()
+	defer displayLog()
+
+	//Todo - add support for httptest https://stackoverflow.com/questions/40786526/resetting-http-handlers-in-golang-for-unit-testing
+	http.DefaultServeMux = new(http.ServeMux)
+
+	// setup crossbar on local (free) port
+
+	closed := make(chan struct{})
+	var wg sync.WaitGroup
+
+	port, err := freeport.GetFreePort()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	addr := ":" + strconv.Itoa(port)
+	route := "ws://127.0.0.1" + addr
+	secret := "asldjflkasjdflkj13094809asdfhkj13"
+	config := Config{
+		Addr:     addr,
+		Audience: route,
+		Secret:   secret,
+	}
+
+	wg.Add(1)
+
+	go crossbar(config, closed, &wg)
+
+	time.Sleep(10 * time.Millisecond)
+
+	// set up test server and two clients
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	clientEndPoint := "/out/some/location"
+	serverEndPoint := "/in/some/location"
+	uc := route + clientEndPoint
+	us := route + serverEndPoint
+
+	var lifetime int64 = 999999
+	ctoken, err := MakeTestToken(uc, lifetime, secret)
+
+	assert.NoError(t, err)
+	badstoken, err := MakeTestToken(uc, lifetime, secret) //deliberately wrong routing (should have .../in/... not .../out/...)
+
+	assert.NoError(t, err)
+
+	c0 := reconws.New()
+	s := reconws.New()
+
+	go c0.Reconnect(ctx, uc)
+	go s.Reconnect(ctx, us)
+
+	timeout := 100 * time.Millisecond
+
+	time.Sleep(timeout)
+
+	// do authorisation
+	mtype := websocket.TextMessage
+
+	c0.Out <- reconws.WsMessage{Data: []byte(ctoken), Type: mtype}
+	s.Out <- reconws.WsMessage{Data: []byte(badstoken), Type: mtype}
+
+	expectedClientReply, err := json.Marshal(AuthMessage{
+		Topic:      clientEndPoint,
+		Token:      ctoken,
+		Authorised: true,
+		Reason:     "ok",
+	})
+
+	assert.NoError(t, err)
+
+	_ = expectOneSlice(c0.In, expectedClientReply, timeout, t)
+
+	expectedServerReply, err := json.Marshal(AuthMessage{
+		Topic:      serverEndPoint,
+		Token:      badstoken,
+		Authorised: false,
+		Reason:     "denied",
+	})
+
+	_ = expectOneSlice(s.In, expectedServerReply, timeout, t)
+
+	payload0 := []byte("Hello from client0")
+
+	c0.Out <- reconws.WsMessage{Data: payload0, Type: mtype}
+
+	expectNoMsg(s.In, timeout, t)  //should not see message from any client
+	expectNoMsg(c0.In, timeout, t) //should not see message from other client
+
+	// broadcast from the server - note that due to reconnecting websocket reconws being
+	// used in this test, the connection will have closed after the last failed auth,
+	// so it will connect again, and this message will count as a "first" connection,
+	// so the broadcast message will be treated as the
+	// access token, and the server will fail to authorise (again)
+	// TODO we will want to build servers and clients that are polite about reconnecting
+	// after denial! (hence the value in sending the denial message)
+
+	broadcast0 := []byte("First broadcast from server")
+
+	s.Out <- reconws.WsMessage{Data: broadcast0, Type: websocket.BinaryMessage}
+
+	expectNoMsg(c0.In, timeout, t) //should not see message from unauthed server
+
+	expectedServerReply, err = json.Marshal(AuthMessage{
+		Topic:      serverEndPoint,
+		Token:      string(broadcast0),
+		Authorised: false,
+		Reason:     "denied",
+	})
+
+	_ = expectOneSlice(s.In, expectedServerReply, timeout, t)
+
+	time.Sleep(timeout)
+
+	cancel()
+
+	time.Sleep(timeout)
+
+	close(closed)
+
+	wg.Wait()
+
+}
+
 func TestBadClientAuth(t *testing.T) {
 	//log.SetLevel(log.TraceLevel)
 	suppressLog()
@@ -508,7 +826,7 @@ func expectNoMsg(channel chan reconws.WsMessage, timeout time.Duration, t *testi
 		return //we are expecting to timeout, this is good
 	case msg, ok := <-channel:
 		if ok {
-			t.Errorf("Receieved unexpected message %v", msg)
+			t.Errorf("Receieved unexpected message %s", msg.Data)
 		} else {
 			//just a channel problem, not an unexpected message
 		}
