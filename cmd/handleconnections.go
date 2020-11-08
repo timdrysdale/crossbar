@@ -292,7 +292,7 @@ func (c *Client) readPump(broadcaster bool) {
 				reply, err := json.Marshal(accepted)
 
 				if err == nil {
-					c.send <- message{sender: *c, data: reply, mt: websocket.TextMessage}
+					c.adminSend <- message{sender: *c, data: reply, mt: websocket.TextMessage}
 				} else {
 					log.WithField("error", err.Error()).Warn("Could not marshal authorisation-accepted message")
 				}
@@ -309,10 +309,13 @@ func (c *Client) readPump(broadcaster bool) {
 				reply, err := json.Marshal(denied)
 
 				if err == nil {
-					c.send <- message{sender: *c, data: reply, mt: websocket.TextMessage}
+					log.WithField("topic", topic).Debug("Sending auth denied message")
+					c.adminSend <- message{sender: *c, data: reply, mt: websocket.TextMessage}
+					log.WithField("topic", topic).Info("Sent auth denied message")
 				} else {
 					log.WithField("error", err.Error()).Warn("Could not marshal authorisation-denied message")
 				}
+				time.Sleep(50 * time.Millisecond) // allow some time for denied message to be sent
 				log.WithField("topic", c.topic).Warn("Auth incorrect, closing connection")
 				return // close connection if auth is incorrect. Will this mess up
 
@@ -406,9 +409,29 @@ func (c *Client) writePump(closed <-chan struct{}) {
 	defer func() {
 		ticker.Stop()
 		c.conn.Close()
+		log.Debug("write pump dead")
 	}()
 	for {
+		log.Debug("Write pump alive")
 		select {
+
+		case message, ok := <-c.adminSend:
+			log.Debug("Sending admin message")
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				// The hub closed the channel.
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			w, err := c.conn.NextWriter(message.mt)
+			if err != nil {
+				return
+			}
+
+			w.Write(message.data)
+			if err := w.Close(); err != nil {
+				return
+			}
 		case message, ok := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
@@ -495,6 +518,7 @@ func serveWs(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Re
 	client := &Client{hub: hub,
 		conn:        conn,
 		send:        make(chan message, 256),
+		adminSend:   make(chan message, 2),
 		topic:       topic,
 		broadcaster: broadcaster,
 		stats:       stats,

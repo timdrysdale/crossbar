@@ -33,6 +33,9 @@ type Client struct {
 	// Buffered channel of outbound messages.
 	send chan message
 
+	// admin messages which are always sent, e.g. to unauthorised client
+	adminSend chan message
+
 	// string representing the path the client connected to
 	topic string
 
