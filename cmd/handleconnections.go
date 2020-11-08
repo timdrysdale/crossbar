@@ -15,7 +15,6 @@ import (
 	"github.com/eclesh/welford"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/spf13/viper"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -257,6 +256,13 @@ func (c *Client) readPump(broadcaster bool) {
 						default:
 							<-time.After(time.Duration(lifetime) * time.Second)
 							c.authorised = false
+
+							// don't send expired message to avoid jsmpeg having to check each incoming message
+							// for whether it is MPEG TS or json
+							// propose using separate service to send "information on token status"
+							// i.e. subscribe to the token alerts service with your tokens ...
+							// (which need not necessarily check the signature?)
+
 							log.WithFields(log.Fields{"topic": c.topic}).Warn("Token has expired")
 						}
 					}
@@ -442,7 +448,7 @@ func (c *Client) writePump(closed <-chan struct{}) {
 }
 
 // serveWs handles websocket requests from the peer.
-func serveWs(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Request) {
+func serveWs(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Request, config Config) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.WithField("error", err).Error("Upgrading serveWs")
@@ -479,8 +485,8 @@ func serveWs(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Re
 		name:        uuid.New().String(),
 		userAgent:   r.UserAgent(),
 		remoteAddr:  r.Header.Get("X-Forwarded-For"),
-		secret:      viper.GetString("secret"),
-		audience:    viper.GetString("audience"),
+		secret:      config.Secret,
+		audience:    config.Audience,
 	}
 	client.hub.register <- client
 
@@ -490,12 +496,15 @@ func serveWs(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Re
 	go client.readPump(broadcaster)
 }
 
-func serveStats(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Request) {
+func serveStats(closed <-chan struct{}, hub *Hub, w http.ResponseWriter, r *http.Request, config Config) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.WithField("error", err).Error("Upgrading serveStats")
 		return
 	}
+
+	// TODO check authorisation to get stats
+	log.Warn("Stats channel not protected; is open to all")
 
 	client := &Client{hub: hub,
 		conn: conn,
@@ -518,19 +527,19 @@ func servePage(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "stats.html")
 }
 
-func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message, addr string) {
+func HandleConnections(closed <-chan struct{}, wg *sync.WaitGroup, clientActionsChan chan clientAction, messagesFromMe chan message, config Config) {
 	hub := newHub()
 	go hub.run()
 
 	http.HandleFunc("/stats", servePage)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		serveWs(closed, hub, w, r)
+		serveWs(closed, hub, w, r, config)
 	})
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		serveStats(closed, hub, w, r)
+		serveStats(closed, hub, w, r, config)
 	})
 
-	h := &http.Server{Addr: addr, Handler: nil}
+	h := &http.Server{Addr: config.Addr, Handler: nil}
 
 	go func() {
 		if err := h.ListenAndServe(); err != nil {

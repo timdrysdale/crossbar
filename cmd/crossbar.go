@@ -1,8 +1,10 @@
 package cmd
 
-import "sync"
+import (
+	"sync"
+)
 
-func crossbar(addr string, closed chan struct{}, parentwg *sync.WaitGroup) {
+func crossbar(config Config, closed chan struct{}, parentwg *sync.WaitGroup) {
 
 	var wg sync.WaitGroup
 
@@ -16,7 +18,7 @@ func crossbar(addr string, closed chan struct{}, parentwg *sync.WaitGroup) {
 
 	wg.Add(2)
 
-	go HandleConnections(closed, &wg, clientActionsChan, messagesToDistribute, addr)
+	go HandleConnections(closed, &wg, clientActionsChan, messagesToDistribute, config)
 
 	go HandleClients(closed, &wg, &topics, clientActionsChan)
 

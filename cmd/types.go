@@ -8,6 +8,13 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+//let configuration be passed as argument to permit testing
+type Config struct {
+	Addr     string
+	Secret   string
+	Audience string
+}
+
 // Auth message to send on successful connection or not ...
 type AuthMessage struct {
 	Topic      string `json:"topic"`

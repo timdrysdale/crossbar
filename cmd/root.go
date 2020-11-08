@@ -104,9 +104,15 @@ and can handle binary and text messages.`,
 			}
 		}()
 
+		config := Config{
+			Addr:     viper.GetString("listen"),
+			Secret:   viper.GetString("secret"),
+			Audience: viper.GetString("audience"),
+		}
+
 		wg.Add(1)
 
-		go crossbar(addr, closed, &wg)
+		go crossbar(config, closed, &wg)
 
 		wg.Wait()
 
