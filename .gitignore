@@ -4,13 +4,18 @@
 *.dll
 *.so
 *.dylib
-*~
-crossbar
 *.log
+*~
 *#
-# Test binary, build with `go test -c`
+.#*
+*.html
+*.zip
+doc
+# Test binary, built with `go test -c`
 *.test
-crossbar
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
