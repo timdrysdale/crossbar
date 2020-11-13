@@ -45,8 +45,9 @@ func (h *Hub) run() {
 					select {
 					case client.send <- message:
 					default:
-						close(client.send)
-						delete(h.clients[topic], client)
+						h.unregister <- client
+						//close(client.send)
+						//delete(h.clients[topic], client)
 					}
 				}
 			}
